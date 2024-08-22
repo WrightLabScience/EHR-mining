@@ -1,7 +1,8 @@
 #### JOIN DEATH DATA WITH CONCORDANCE ANALYSIS DATA ####
 library(dplyr)
-load(file = '~/Desktop/EHR/EHR work/ALL/Rdata/ASTs_AbxAdmin_blood_2017_imputed_flagged.Rdata')
-load(file = '~/Desktop/EHR/EHR work/Bacteremia2017/data/CleanedDemographics.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_imputed_flagged.Rdata'))
+load(file = paste0(data_path_name, 'CleanedDemographics.Rdata'))
 
 length(unique(empDF$PERSON_ID)) # 4,007
 length(unique(dths$PERSON_ID)) # 4,546

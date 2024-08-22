@@ -2,10 +2,11 @@
 # 2017 - blood cultures - with med_admin
 
 library(dplyr)
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017.Rdata'))
 
 # From Kadri et al, 2021
-source(file = '~/Desktop/EHR/EHR work/ASTimputation/ImputationRulesClean.R')
+source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesClean.R')
 
 abx_names <- names(empDF)[14:length(empDF)]
 imp_rules$Antibiotic[!unique(imp_rules$Antibiotic) %in% abx_names] # CEFADROXIL, CEPHALEXIN, DICLOXACILLIN
@@ -147,7 +148,7 @@ which(sapply(empCOPY[14:length(empCOPY)], function(x) 4 %in% x))
 
 # EUCAST EXPECTED PHENOTYPES:
 library(readxl)
-path <- '~/Desktop/EHR/EHR work/ASTimputation/EUCAST_expected_ASTs/ImputationRuleTables/'
+path <- '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/'
 R1 <- read_xlsx(paste0(path, 'Table1_exp_res.xlsx'))
 names(R1)[1] <- "ORGANISMS"
 R2 <- read_xlsx(paste0(path, 'Table2_exp_res.xlsx'))
@@ -240,7 +241,6 @@ rm(df)
 
 
 # EUCAST expert rules
-path <- '~/Desktop/EHR/EHR work/ASTimputation/EUCAST_expected_ASTs/'
 StaphRules <- read.table(file = paste0(path, 'EUCAST Expert Rules v 3.2 - Staph Rules Condensed.tsv'), sep = "\t")
 names(StaphRules) <- toupper(StaphRules[1,])
 StaphRules <- StaphRules[-1,]

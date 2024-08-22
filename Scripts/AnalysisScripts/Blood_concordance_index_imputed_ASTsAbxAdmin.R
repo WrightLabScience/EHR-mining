@@ -1,6 +1,7 @@
 library(dplyr)
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_imputed.Rdata')
-#load(file = '~/Desktop/EHR/EHR work/ALL/Rdata/ASTs_AbxAdmin_blood_2015_2023.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_imputed.Rdata'))
+# load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2015_2023.Rdata'))
 
 empDF <- empDF %>% filter(!MULT_ISOLATES)
 

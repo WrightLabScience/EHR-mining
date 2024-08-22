@@ -1,5 +1,5 @@
 cleanPathogenNames <- function(df) {
-   bugs <- read.csv(file = '~/Desktop/EHR/EHR work/data/CleanPathogenNames/CleanPathogenNames.csv')
+   bugs <- read.csv(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.csv')
    bugs$type <- apply(bugs, 1, function(x) paste(which(x != ''), collapse=', '))
    
    #### Group X Streptococci

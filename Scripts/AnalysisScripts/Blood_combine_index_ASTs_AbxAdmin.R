@@ -1,7 +1,7 @@
 library(dplyr)
-
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_blood_2015_2023.Rdata')
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2017_AbxAdmin.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'ASTs_blood_2015_2023.Rdata'))
+load(file = paste0(data_path_name, 'ALL_2017_AbxAdmin.Rdata'))
 
 # FOR NOW ONLY 2017!!!
 empDF <- empDF %>% filter(substr(ORDER_DATE, 1, 4) == '2017')     # 82,042 --> 9,452

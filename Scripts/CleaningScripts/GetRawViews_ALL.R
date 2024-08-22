@@ -1,4 +1,4 @@
-source('~/Desktop/EHR/EHR work/EHR access/Neptune access outline/config_file.R')
+source('~/Desktop/EHR/EHR work/config_file.R')
 
 # AST results view
 astrDF <- tbl(conn, in_schema('AMB_ETL', 'LAB_MICRO_SENS_ALL_VW')) %>% collect()

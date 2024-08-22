@@ -20,7 +20,7 @@ astrDF <- astrDF %>%
 
 
 # get just the unique pathogen names for cleaning
-source('~/Desktop/EHR/EHR work/data/CleanPathogenNames/CleanPathogenNames.R')
+source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
 path_names <- astrDF %>%
    count(PATH_NAME, sort=TRUE) %>%
    mutate(BUG = NA_character_)

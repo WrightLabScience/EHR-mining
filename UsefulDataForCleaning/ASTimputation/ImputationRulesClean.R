@@ -1,5 +1,5 @@
 library(dplyr)
-imp_rules <- readxl::read_xlsx(path = '~/Desktop/EHR/EHR work/ASTimputation/ImputationRulesFromRheeEtAl2020.xlsx')
+imp_rules <- readxl::read_xlsx(path = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesFromRheeEtAl2020.xlsx')
 imp_rules <- tidyr::pivot_longer(data = imp_rules,
                           cols = !Antibiotic,
                           names_to = 'BUG',

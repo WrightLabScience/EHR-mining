@@ -83,7 +83,7 @@ gc()
 
 
 # get Pathogen Names
-source(file = '~/Desktop/EHR/EHR work/data/CleanPathogenNames/CleanPathogenNames.R')
+source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
 
 # AST ORDERS
 path_names <- astoDF %>%

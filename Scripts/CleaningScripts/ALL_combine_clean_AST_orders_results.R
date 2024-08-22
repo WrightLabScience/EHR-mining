@@ -88,7 +88,7 @@ save(astDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
 ###################################################################################
 
 
-
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/plots_path_name.Rdata')
 
 # RESULT_DELAY
 astDF <- astDF %>% mutate(RESULT_DELAY = as.numeric(lubridate::as.duration(RESULT_DATE - ORDER_DATE)) / 86400)
@@ -120,7 +120,7 @@ median(sab) # 3.14 (~9.5 hours)
 rm(sa, sab)
 
 {
-   pdf(file = '~/Desktop/EHR/EHR work/ALL/plots/AST_result_delay.pdf')
+   pdf(file = paste0(plots_path_name, 'AST_result_delay.pdf'))
    par(mfrow = c(2, 1), mar=c(4,3,2,1), mgp=c(2, 0.5, 0), tck=-0.015)
    hist(x, xlim=c(0, 12), breaks=diff(range(x))*24, xlab='Days', main='Time between AST order and result - overall')
    hist(x[astDF$BLOOD],  xlim=c(0, 12), breaks=diff(range(x))*24, xlab='Days', main='Time between AST order and result - blood cultures')
@@ -139,7 +139,7 @@ colnames(t) <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1\\. \\2', colnames(t))
 colnames(t)[colnames(t) == 'Coagulase Negative Staph'] <- 'Coag Neg Staph'
 x <- barplot(rep(1,n), horiz=TRUE)
 {
-   pdf(file = '~/Desktop/EHR/EHR work/ALL/plots/BugCounts.pdf', height=6)
+   pdf(file = paste0(plots_path_name, 'BugCounts.pdf'), height=6)
    par(mar=c(4, 8, 1, 2), mgp=c(2, 0.5, 0), tck=-0.015)
    barplot(t, horiz=TRUE, names.arg=rep('', n), xlim=c(0,6e5), xlab='Number of times isolated',
            legend.text = c('blood', 'non-blood'))
@@ -164,7 +164,7 @@ num_year_b <- astDF %>%
 num_year_b <- num_year_b[-length(num_year_b)]
 
 {
-   pdf(file = '~/Desktop/EHR/EHR work/ALL/plots/NumberCulturesPerYear.pdf', height=5)
+   pdf(file = paste0(plots_path_name, 'NumberCulturesPerYear.pdf'), height=5)
    par(mar = c(4, 5.5, 1, 1), mgp=c(2.2, 0.6, 0), tck=-0.01)
    plot(x = as.integer(names(num_year)), y = num_year, type = 'b', pch=16,
         xlab = 'Year', ylab='', yaxt='n')
@@ -187,7 +187,7 @@ result_hour <- result_hour[names(result_hour) != '']
 names(order_hour) <- gsub('^0', '', names(order_hour))
 names(result_hour) <- gsub('^0', '', names(result_hour))
 {
-   pdf(file = '~/Desktop/EHR/EHR work/ALL/plots/TimeOfDayASTordersResults.pdf', height=4, width=9)
+   pdf(file = paste0(plots_path_name, 'TimeOfDayASTordersResults.pdf'), height=4, width=9)
    par(mfrow=c(1,2), mgp=c(2, 0.6, 0), mar=c(4, 3, 2, 1))
    barplot(order_hour, main='AST orders', xlab = 'Hour of day')
    barplot(result_hour, main='AST results', xlab = 'Hour of day')
