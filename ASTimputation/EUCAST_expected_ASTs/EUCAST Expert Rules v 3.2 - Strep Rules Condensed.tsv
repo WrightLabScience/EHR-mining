@@ -1,0 +1,4 @@
+bug	benzylpenicillin	phenoxymethylpenicillin	cephalosporins and carbapenems	aminopenicillins	cefotaxime	ceftriaxone	levofloxacin	moxifloxacin	all fluoroquinolones	doxycycline	minocycline	dalbavancin	oritavancin	telavancin
+Streptococcus pneumoniae	S if oxacillin; NA	S if oxacillin; NA	S if oxacillin; NA	S if oxacillin; NA	NA	NA	E norfloxacin; NA	E norfloxacin; NA	R if levofloxacin; R if moxifloxacin; NA	E tetracycline; NA	E tetracycline; NA	S if vancomycin; NA	S if vancomycin; NA	S if vancomycin; NA
+Beta-Hemolytic streptococci	NA	NA	S if benzylpenicillin; NA	S if benzylpenicillin; NA	NA	NA	E norfloxacin; NA	E norfloxacin; NA	NA	NA	NA	NA	NA	NA
+Viridans group streptococci	NA	NA	NA	S if benzylpenicillin; NA	S if benzylpenicillin; NA	S if benzylpenicillin; NA	NA	NA	NA	NA	NA	NA	NA	NA

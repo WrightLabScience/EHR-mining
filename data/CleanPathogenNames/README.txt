@@ -1,0 +1,11 @@
+Clean Pathogen Names:
+
+When looking at the views specific to antibiotic susceptibility test (AST) data, there are 2 types of views: AST orders (unintuitively, these views have the suffix "RESULT"): All patients - LAB_MICRO_RESULT_ALL_VW CAP cohort - LAB_MICRO_RESULT_VW Bacteremia cohort - BACT_LAB_MICRO_RESULT_VW AST results (these views have the suffix "SENS"): All patients - LAB_MICRO_SENS_ALL_VW, LAB_MICRO_ALL_VW (LAB_MICRO_SENS_ALL_VW has 2 additional fields: ORGANISM_ID and SENSITIVITY_COMMENT) Inpatients - LAB_MICRO_SENS_INPT_VW CAP cohort - LAB_MICRO_SENS_VW Bacteremia cohort - BACT_LAB_MICRO_SENS_VW
+
+AST orders views have information about the order: order date-time, result date-time, infection site (messy), occasional mention of the infecting pathogen (messy), lab location AST results views have the results of the antibiotic susceptibility tests: name of infecting pathogen (messy), antibiotic name (this field is mistakenly spelled "ANITBIOTIC_NAME" in all relevant views), result date (no time)
+
+AST orders and results must be joined (by PERSON_ID, ORDER_PROC_ID, and occasionally pathogen name) in order to link AST results with a specific order and result date-time.
+
+TODO: include scripts for cleaning and joining AST orders and results
+
+Prior to joining, the RESULT_VALUE field of AST orders views (which contains occasional mention of the infecting pathogen) and the ORGANISM_NAME field of the AST results views must be processed to clean the pathogen names into a consistent format. In this repository is CleanPathogenNames.csv, which contains search terms for dozens/hundreds of pathogens to handle cases of mispelling, misordering of genus/species, and other silly problems. The CleanPathogenNames.R script is a function who's input is a data.frame (or tibble) in which one column is named PATH_NAME (RESULT_VALUE or ORGANISM_NAME columns must be renamed) and another empty column named BUG. The output is the same data.frame with (hopefully) most BUG values filled with valid and clean pathogen names.
