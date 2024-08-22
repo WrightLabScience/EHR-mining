@@ -1,3 +1,0 @@
-load("/Users/samblechman/Desktop/EHR/EHR work/data/bug_dict.Rdata")
-ls()
-bug_dict
