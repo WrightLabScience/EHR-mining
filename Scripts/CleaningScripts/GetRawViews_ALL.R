@@ -33,45 +33,10 @@ save(dth, file = '~/Desktop/EHR/EHR work/RdataFiles/SENS_DeathAgeGender.Rdata')
 
 # Med admin (IV too) views
 meds    <- tbl(conn, in_schema('AMB_ETL', 'SENS_MED_ADMIN_VW'))    %>% count(MEDICATION, sort=TRUE) %>% collect()
+save(meds, file='~/Desktop/EHR/EHR work/RdataFiles/Sens_med_list.Rdata')
 meds_iv <- tbl(conn, in_schema('AMB_ETL', 'SENS_MED_ADMIN_IV_VW')) %>% count(MEDICATION, sort=TRUE) %>% collect()
-meds$IV_FLAG <- FALSE
-meds_iv$IV_FLAG <- TRUE
-meds <- rbind(meds, meds_iv)
-meds %>% count(IV_FLAG)
+save(meds_iv, file='~/Desktop/EHR/EHR work/RdataFiles/Sens_med_iv_list.Rdata')
 
-
-# AST antibiotics
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/ast_antibiotics.Rdata')
-abx_ast <- abx; rm(abx)
-abx_ast <- abx_ast[abx_ast != 'PAS']
-abx_ast <- c(abx_ast, 'PASER', 'SULFAMETHOXAZOLE/TRIMETHOPRIM', 'QUINUPRISTIN', 'DALFOPRISTIN', 'RELEBACTAM')
-
-# Antibiotic names, abbreviations, and classes
-abx_abbr <- tibble(read.table(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/ABX_ABBR.txt', header = TRUE)) %>%
-   select(Antibiotic_Name) %>%
-   mutate(Antibiotic_Name = gsub('-', '/', Antibiotic_Name),
-          Antibiotic_Name = gsub('_', ' ', Antibiotic_Name),
-          Antibiotic_Name = toupper(Antibiotic_Name)) %>%
-   unlist()
-names(abx_abbr) <- NULL
-
-# Antibiotic
-abx_gen <- read.table(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/AntibioticNames.txt', sep='\t', header = TRUE)
-abx_gen <- toupper(abx_gen$Generic)
-
-# COMBINE ALL
-abx_all <- sort(unique(c(abx_ast, abx_abbr, abx_gen)))
-abx_all <- abx_all[!abx_all %in% c('STREPTOMYCIN_HIGH_LEVEL', 'STREPTOMYCIN_SYNERGY', 'GENTAMICIN_HIGH_LEVEL', 'GENTAMICIN_SYNERGY', 
-                                   'CARBAPENEM_INACTIVATION_TEST', 'BETA_LACTAMASE', 'CLINDAMYCIN_INDUCIBLE')]
-abx_all <- unlist(strsplit(abx_all, '/'))
-abx_all <- sort(unique(abx_all))
-write.table(x = paste0('"%', paste(abx_all, collapse='%", "%'), '%"'),
-            file='~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/Single_abx_names.txt',
-            col.names = FALSE,
-            row.names = FALSE,
-            quote = FALSE)
-length(abx_all) # 233
-rm(abx_gen, abx_ast, abx_abbr)
 
 
 # search for each antibiotic search pattern in the list of drug_names
@@ -126,7 +91,7 @@ save(meds, file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_nam
 
 
 
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/med_admin_abx_names.Rdata')
+
 write.table(x = paste0("'", paste(sort(unique(unlist(strsplit(unique(meds$ABX[meds$IV_FLAG]), split=', |/')))), collapse='|'), "'"),
             file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/Med_IV_admin_abx_names.txt',
             quote = FALSE,

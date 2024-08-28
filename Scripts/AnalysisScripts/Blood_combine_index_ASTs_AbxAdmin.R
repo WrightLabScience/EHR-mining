@@ -1,16 +1,15 @@
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
 load(file = paste0(data_path_name, 'ASTs_blood_2015_2023.Rdata'))
-load(file = paste0(data_path_name, 'ALL_2017_AbxAdmin.Rdata'))
+load(file = paste0(data_path_name, 'ALL_CLEANED_2017_2023_AbxAdmin.Rdata'))
 
 # FOR NOW ONLY 2017!!!
-empDF <- empDF %>% filter(substr(ORDER_DATE, 1, 4) == '2017')     # 82,042 --> 9,452
-abxDF <- abxDF %>% filter(PERSON_ID %in% unique(empDF$PERSON_ID)) # 1,288,305 --> 369,272
+empDF <- empDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2017:2023)) # 82,042 --> 64,458
+abxDF <- abxDF %>% filter(PERSON_ID %in% unique(empDF$PERSON_ID))                # 9,681,748 --> 3,780,955
 
-length(unique(empDF$PERSON_ID)) # 6,719
-length(unique(abxDF$PERSON_ID)) # 6,304
-length(intersect(empDF$PERSON_ID, abxDF$PERSON_ID)) # 6,304 - all! (better than medication dispensing data!!)
-
+length(unique(empDF$PERSON_ID)) # 45,345
+length(unique(abxDF$PERSON_ID)) # 42,958
+length(intersect(empDF$PERSON_ID, abxDF$PERSON_ID)) # 42,958
 
 
 # add in a column describing the date of the most recent antibiotic prescription
