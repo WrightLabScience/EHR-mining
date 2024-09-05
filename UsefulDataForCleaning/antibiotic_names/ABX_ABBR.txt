@@ -23,8 +23,8 @@ Cefuroxime CXM Cephalosporin
 Cephalothin CEF Cephalosporin
 Chloramphenicol CHL Amphenicol
 Ciprofloxacin CIP Fluoroquinolone
-Gatifloxacin ? Fluoroquinolone
-Gemifloxacin ? Fluoroquinolone
+Gatifloxacin GAT Fluoroquinolone
+Gemifloxacin GEM Fluoroquinolone
 Clarithromycin CAM Macrolide
 Clindamycin CLI Lincosamide
 Clotrimazole CLOT Imidazole
@@ -53,7 +53,7 @@ Neomycin NEO Aminoglycoside
 Nitrofurantoin NIT Nitrofuran
 Norfloxacin NOR Fluoroquinolone
 Ofloxacin OFX Fluoroquinolone
-Oxacillin OX Penicillin
+Oxacillin OXA Penicillin
 Penicillin PEN Penicillin
 Piperacillin PIP Penicillin
 Piperacillin-tazobactam TZP β-lactam+adjuvant

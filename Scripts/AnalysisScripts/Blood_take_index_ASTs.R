@@ -1,5 +1,4 @@
 library(dplyr)
-library(tidyr)
 
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
 print(object.size(astDF), units='Mb') # 1,975.3 Mb
@@ -23,11 +22,14 @@ print(object.size(astDF), units='Mb') # 1,975.3 Mb
 
 # sometimes the same exact same bug is repeated but with slightly different times (same date) and therefore different order_proc_ids
 empDF <- astDF %>%
-   filter(BLOOD) %>% # 151,258
-   #filter(!grepl('Aspergillus|Candida|Cryptococcus', BUG)) %>%
-   select(-BLOOD, -ORDER_PROC_ID) %>%
-   mutate(across(c(ORDER_DATE, RESULT_DATE), ~ as.Date(substr(.,1,10)))) %>%
-   distinct() %>% # 144,824
+   # filter(BLOOD) %>% # 151,258
+   # filter(!grepl('Aspergillus|Candida|Cryptococcus', BUG)) %>%
+   # select(-BLOOD) %>%
+   select(-ORDER_PROC_ID) %>%
+   mutate(ORDER_DAY =  as.Date(substr(ORDER_DATE,1,10)),
+          RESULT_DAY =  as.Date(substr(RESULT_DATE,1,10))) %>%
+   relocate(ORDER_DAY, RESULT_DAY, .after=RESULT_DATE) %>%
+   distinct() %>% # 150,716
    arrange(PERSON_ID, ORDER_DATE, RESULT_DATE, BUG)
 rm(astDF)
 gc()
@@ -35,27 +37,53 @@ gc()
 
 # how often is the same bug isolated on same day with same eventual AST profile, but with different result_date?
 # fairly often, combine them and take the minimum result_date
+# WHEN ALL IS EQUAL, TAKE MIN ORDER_DATE
+# start <- Sys.time()
+# empDF <- empDF %>%
+#    group_by_all() %>% ungroup(ORDER_DATE) %>%
+#    slice_min(ORDER_DATE) %>% # 150,716 --> 148,846
+#    ungroup()
+# print(Sys.time() - start) # ~30 seconds
+
+#### groups have same order DAY and result DAY, but not necessarily time
+# take the minimum of both (often its the same row, occasionally )
 empDF <- empDF %>%
    group_by_all() %>%
-   ungroup(RESULT_DATE) %>%
-   slice_min(RESULT_DATE) %>% # 144,824 --> 141,726
+   ungroup(RESULT_DATE, ORDER_DATE) %>%
+   summarise(ORDER_DATE = min(ORDER_DATE),
+             RESULT_DATE = min(RESULT_DATE)) %>% # 150,716 --> 144,824
+   relocate(ORDER_DATE, RESULT_DATE, .before=ORDER_DAY) %>%
    ungroup()
+print(nrow(empDF)) # 1,837,358 --> 1,808,910
+
+empDF <- empDF %>%
+   select(-ORDER_DAY, -RESULT_DAY) %>%
+   group_by_all() %>% ungroup(RESULT_DATE) %>% # 144,824 --> 143,972
+   slice_min(RESULT_DATE) %>%
+   ungroup()
+print(nrow(empDF)) # 1,808,910 --> 1,804,376
 
 
-num_blood_cults_month <- table(substr(empDF$ORDER_DATE, 1, 7))
-getYear <- function(x) as.integer(substr(x,1,4)) + (as.integer(substr(x,6,7)) - 1) / 12
-names(num_blood_cults_month) <- getYear(names(num_blood_cults_month))
-plot(num_blood_cults_month, type='l', xaxt='n')
-axis(side=1, at=seq(2004, 2024, 1))
-abline(v = c(2015, 2023))
-abline(h = c(700, 1000), lty=2)
-rm(num_blood_cults_month, getYear)
 
 
-# only take 2015 - 2023 - 97,202
+# PLOT - number of blood culture per month
+if (FALSE) {
+   num_blood_cults_month <- table(substr(empDF$ORDER_DATE, 1, 7))
+   getYear <- function(x) as.integer(substr(x,1,4)) + (as.integer(substr(x,6,7)) - 1) / 12
+   names(num_blood_cults_month) <- getYear(names(num_blood_cults_month))
+   plot(num_blood_cults_month, type='l', xaxt='n')
+   axis(side=1, at=seq(2004, 2024, 1))
+   abline(v = c(2015, 2023))
+   abline(h = c(700, 1000), lty=2)
+   rm(num_blood_cults_month, getYear)
+}
+
+
+# only take 2015 - 2023 - 143,972 --> 98,717
+# (including non-blood) 1,804,376 --> 1,240,090
 empDF <- empDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2015:2023))
-length(unique(empDF$PERSON_ID)) # 55,726
-
+print(nrow(empDF))
+length(unique(empDF$PERSON_ID)) # 55,726 (446,636)
 
 
 # plotting bugs vs. year
@@ -172,69 +200,129 @@ if (FALSE) {
 
 
 
-# I want to take only the first culture in >= 30 days
-#  how many of these have >1 isolate? (exclude them for now)
-#  how to do this?
 
-empDF$WITHIN_PRV <- FALSE
-empDF$WITHIN_PRV[empDF$ORDER_DATE <= lag(empDF$RESULT_DATE) & empDF$ORDER_DATE > lag(empDF$ORDER_DATE)] <- TRUE
-empDF$WITHIN_PRV[empDF$PERSON_ID != lag(empDF$PERSON_ID)] <- FALSE
-
-empDF$DAYS_SINCE_PRV <- as.integer(empDF$ORDER_DATE - lag(empDF$RESULT_DATE))
-empDF$DAYS_SINCE_PRV[empDF$PERSON_ID != lag(empDF$PERSON_ID)] <- NA
-#empDF$DAYS_SINCE_PRV[empDF$WITHIN_PRV] <- NA
-
-empDF %>% count(WITHIN_PRV, DAYS_SINCE_PRV >= 60)
-# 60
-#   WITHIN_PRV `DAYS_SINCE_PRV >= 30`      n
-# 1 FALSE      FALSE                  22,097  -  subsequent cultures that occurred during the same "visit"
-# 2 FALSE      TRUE                   10,190  -  subsequent cultures that represent the next "visit"
-# 3 FALSE      NA                     55,726  -  each person's first culture record
-# 4 TRUE       NA                      9,189  -  cultures that occurred in the window of the previous culture
-
-# 30
-#   WITHIN_PRV `DAYS_SINCE_PRV >= 30`      n
-# 1 FALSE      FALSE                   4,740  -  subsequent cultures that occurred during the same "visit"
-# 2 FALSE      TRUE                   12,211  -  subsequent cultures that represent the next "visit"
-# 3 FALSE      NA                     55,213  -  each person's first culture record
-# 4 TRUE       NA                     23,208  -  cultures that occurred in the window of the previous culture
-
-empDF$MULT_ISOLATES <- FALSE
-empDF$MULT_ISOLATES[empDF$ORDER_DATE == lead(empDF$ORDER_DATE)] <- TRUE
-empDF$MULT_ISOLATES[which(empDF$MULT_ISOLATES) + 1] <- TRUE
-empDF$DAYS_SINCE_PRV[empDF$MULT_ISOLATES] <- NA
-
+# REMOVE NON-INDEX CULTURES - FLAG OTHER CULTURES
 empDF <- empDF %>%
-   relocate(WITHIN_PRV, DAYS_SINCE_PRV, MULT_ISOLATES, .before=BUG)
+   mutate(ORDER_DAY =  as.Date(substr(ORDER_DATE,1,10)),
+          RESULT_DAY =  as.Date(substr(RESULT_DATE,1,10))) %>%
+   relocate(ORDER_DAY, RESULT_DAY, .after=RESULT_DATE) %>%
+   mutate(FIRST_RECORD = PERSON_ID != lag(PERSON_ID)) %>%
+   mutate(MULT_ISO = (ORDER_DAY == lag(ORDER_DAY) & PERSON_ID == lag(PERSON_ID))
+          | (ORDER_DAY == lead(ORDER_DAY) & PERSON_ID == lead(PERSON_ID))) %>%
+   relocate(FIRST_RECORD, MULT_ISO, .after=RESULT_DAY)
+empDF$FIRST_RECORD[1] <- TRUE
+empDF$MULT_ISO[1] <- (empDF$ORDER_DAY[1] == lead(empDF$ORDER_DAY)[1] & empDF$PERSON_ID[1] == lead(empDF$PERSON_ID)[1])
+empDF$MULT_ISO[nrow(empDF)] <- (empDF$ORDER_DAY[nrow(empDF)] == lag(empDF$ORDER_DAY)[nrow(empDF)]  & empDF$PERSON_ID[nrow(empDF)] == lag(empDF$PERSON_ID)[nrow(empDF)])
+empDF %>% count(MULT_ISO)
+empDF %>% count(FIRST_RECORD)
+empDF %>% select(MULT_ISO, FIRST_RECORD) %>% table()
 
-empDF %>% count(WITHIN_PRV, MULT_ISOLATES, DAYS_SINCE_PRV >= 60)
+empDF$INDEX_RECORD <- empDF$FIRST_RECORD | (empDF$PERSON_ID == lag(empDF$PERSON_ID) & empDF$ORDER_DAY - lag(empDF$ORDER_DAY) >= 180)
+empDF %>% select(INDEX_RECORD, FIRST_RECORD) %>% table()
+empDF <- empDF %>% 
+   relocate(INDEX_RECORD, .after=MULT_ISO) %>% 
+   select(-FIRST_RECORD)
 
 
-# 97,202 --> 82,042
-empDF <- empDF %>% filter(!WITHIN_PRV, is.na(DAYS_SINCE_PRV) | DAYS_SINCE_PRV > 60)
-
-
-
-# plot num visits / time bw visits
-if (FALSE) {
-   x <- empDF %>% group_by(PERSON_ID) %>% tally() %>% count(n)
-   x <- x$nn
-   barplot(x, main='Number of "index" blood cultures per patient', names.arg = 1:length(x), xlab='"Index" cultures')
-   
-   x <- empDF$DAYS_SINCE_PRV
-   x <- x[!is.na(x)]
-   hist(x, breaks=diff(range(x)), xlab='Days', main='Days between "visits"')
-   
-   x <- as.integer(empDF$RESULT_DATE - empDF$ORDER_DATE)
-   hist(x, breaks=diff(range(x)), xlim=c(0,12))
-   
-   rm(x)
+# WHEN INDEX RECORD HAD MULTIPLE ISOLATES ON THE SAME ORDER DAY
+# MARK THOSE OTHER ISOLATES AS INDEX AS WELL
+w <- which(empDF$INDEX_RECORD & empDF$MULT_ISO)
+length(w) # 89,742
+shift <- 1
+while(length(w) > 0) {
+   cat(shift, length(w), '\n')
+   empDF$INDEX_RECORD[w + shift] <- TRUE
+   shift <- shift + 1
+   w <- w[which(empDF$ORDER_DAY[w + shift] == empDF$ORDER_DAY[w] & empDF$MULT_ISO[w + shift])]
 }
+rm(w, shift)
+
+## DETERMINE IF INDEX CULTURES ARE "CONTAMINATED" BY SUBSEQUENT CULTURES
+# THAT IS, WERE SUBSEQUENT CULTURES ORDERED OR HAD RESULTS RETURNED IN THE EMPIRIC WINDOW?
+# INDEX CULTURES
+empDF_idx <- empDF %>%
+   filter(INDEX_RECORD) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   slice_min(RESULT_DATE, with_ties = FALSE) %>%
+   ungroup() %>%
+   select(PERSON_ID, ORDER_DAY, RESULT_DAY) %>% 
+   distinct()
+
+# NON-INDEX CULTURES - POTENTIAL "CONTAMINATORS"
+empDF_all <- empDF %>%
+   # filter(!INDEX_RECORD) %>%
+   select(PERSON_ID, ORDER_DAY, RESULT_DAY, RESULT_DATE) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   slice_min(RESULT_DATE, with_ties = FALSE) %>%
+   ungroup() %>%
+   select(-RESULT_DATE) %>%
+   distinct()
 
 
-empDF <- empDF %>% select(-WITHIN_PRV, -DAYS_SINCE_PRV, -MULT_ISOLATES)
+
+empDF_idx_joined <- left_join(x = empDF_idx,
+          y = empDF_all,
+          by = join_by(PERSON_ID,
+                       x$ORDER_DAY < y$ORDER_DAY)) %>% # 1,319,430
+   # filter(RESULT_DAY.x > RESULT_DAY.y) # 3,090 - cool!
+   filter(!is.na(ORDER_DAY.y)) %>% # 970,822
+   arrange(PERSON_ID, ORDER_DAY.x) %>%
+   group_by(PERSON_ID, ORDER_DAY.x) %>%
+   slice_min(ORDER_DAY.y) %>%
+   ungroup() %>% 
+   rename(ORDER_DAY = ORDER_DAY.x, RESULT_DAY = RESULT_DAY.x, 
+          NEXT_ORDER_DAY = ORDER_DAY.y, NEXT_RESULT_DAY = RESULT_DAY.y)
+
+length(unique(empDF_idx_joined$PERSON_ID)) # 180,148  (292,853 index infections)
+length(unique(empDF_idx$PERSON_ID))        # 446,636  (631,461 index infections)
+
+empDF     # all - with all features
+empDF_all # all - just person and dates
+empDF_idx # only index cultures
+empDF_idx_joined # only index cultures in which THERE IS a next culture, along with the date of that next culture
+
+empDF_index <- empDF %>%
+   filter(INDEX_RECORD) %>% # 762,226
+   left_join(x = .,
+             y = empDF_idx_joined,
+             by = join_by(PERSON_ID, ORDER_DAY, RESULT_DAY)) %>% # 762,226
+   relocate(NEXT_ORDER_DAY, NEXT_RESULT_DAY, .before=BUG)
+   
+
+### COULD SAVE ENTIRE EMPIRIC DATASET RIGHT HERE
+# save(empDF, file = '')
+
+## ONLY KEEP BLOODSTREAM INFECTIONS
+empDF <- empDF_index %>% filter(BLOOD)
+
+empDF %>%
+   filter(!is.na(NEXT_ORDER_DAY)) %>%      # 23,674 (out of 55,989) have a next order
+   filter(NEXT_ORDER_DAY < RESULT_DAY) %>% # 8,501 - next order day occurs before index result day
+   filter(NEXT_RESULT_DAY < RESULT_DAY)    # 1,946 get results for the second culture before the index
+
+x <- empDF$NEXT_ORDER_DAY - empDF$ORDER_DAY
+x <- x[!is.na(x)]
+median(x) # 12 days
+table(x <= 7) # 47%
+table(x == 1) # 23.8%
+barplot(table(x), xlim=c(0,30))
+
+
+x <- empDF %>%
+   filter(!is.na(NEXT_ORDER_DAY)) %>%      # 23,674 (out of 55,989) have a next order
+   filter(NEXT_ORDER_DAY < RESULT_DAY) %>%
+   mutate(x = NEXT_ORDER_DAY - ORDER_DAY) %>%
+   select(x) %>%
+   unlist(x)
+table(x == 1) # 66.3% occur on day after
+table(x == 2) # 22.3% occur on day after
+barplot(table(x), xlim=c(0,30))
 
 save(empDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_blood_2015_2023.Rdata')
+
+
+
+
 
 
 
