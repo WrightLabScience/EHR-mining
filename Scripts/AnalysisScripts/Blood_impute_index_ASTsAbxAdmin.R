@@ -3,15 +3,11 @@
 
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017.Rdata'))
+load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
+empDF %>% count(CONTAM)
+empDF %>% count(MULT_BLOOD_ISO)
+# 'VORICONAZOLE', 'FLUCONAZOLE', 'CASPOFUNGIN', 'POSACONAZOLE', 'CLOTRIMAZOLE'
 
-# From Kadri et al, 2021
-source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesClean.R')
-
-abx_names <- names(empDF)[14:length(empDF)]
-imp_rules$Antibiotic[!unique(imp_rules$Antibiotic) %in% abx_names] # CEFADROXIL, CEPHALEXIN, DICLOXACILLIN
-abx_names[!abx_names %in% imp_rules$Antibiotic] # lots
-rm(abx_names)
 
 Viridans <- c("Viridans Streptococci",
               "Alpha Hemolytic Streptococci",
@@ -34,6 +30,17 @@ BetaHemolytic <- c("Beta Hemolytic Streptococci",
                    "Streptococcus bovis",
                    "Streptococcus equinis",
                    "Streptococcus suis")
+
+
+
+####################################################
+############## KADRI IMPUTATION RULES ##############
+####################################################
+source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesClean.R')
+abx_names <- names(empDF)[16:length(empDF)]
+imp_rules$Antibiotic[!unique(imp_rules$Antibiotic) %in% abx_names] # CEFADROXIL, CEFPODOXIME, CEPHALEXIN, DICLOXACILLIN, NAFCILLIN
+abx_names[!abx_names %in% imp_rules$Antibiotic] # lots
+rm(abx_names)
 
 # find which rows of empDF correspond to which bugs
 bug_rows <- setNames(vector('list', length(imp_rules) - 1), names(imp_rules)[-1])
@@ -60,17 +67,15 @@ for (i in seq_along(bug_rows)) {
    bug_rows[[i]] <- grep(bug_name, empDF$BUG)
 }
 lengths(bug_rows)
-sum(lengths(bug_rows))
+sum(lengths(bug_rows)) / nrow(empDF) # 66.8%
 u_bug_rows <- sort(unlist(bug_rows))
 names(u_bug_rows) <- NULL
 any(diff(u_bug_rows) == 0) # no overlap!
 head(sort(table(empDF$BUG[-u_bug_rows]), decreasing = TRUE), n=12) # frequent bugs for which we don't have imputation rules
 rm(u_bug_rows, i, bug_name, w_sa)
 
-
-
+# make copy of original
 empCOPY <- empDF
-
 #input: a value from imp_rules and an ast row number
 #output: 0, 1, or NA
 op <- function(val, r) {
@@ -107,10 +112,8 @@ op <- function(val, r) {
    return(4)
 }
 
-
 for (b in 2:ncol(imp_rules)) { #row by row in imp_rules (bug/species by bug/species)
-   print('_________________________')
-   print(names(imp_rules[b]))
+   cat(b, names(imp_rules[b]), '\n')
    rws <- bug_rows[[names(imp_rules[b])]]               #ast rows related to bug/species
    if (length(rws) == 0) next
    
@@ -137,16 +140,24 @@ for (b in 2:ncol(imp_rules)) { #row by row in imp_rules (bug/species by bug/spec
       }
    }
 }
-rm(a, abx, b, cl, r, rws, val, w, op)
+rm(a, abx, b, cl, r, rws, val, w, op, imp_rules, bug_rows)
 
-which(sapply(empCOPY[14:length(empCOPY)], function(x) 4 %in% x))
+# check for errors
+which(sapply(empCOPY[16:length(empCOPY)], function(x) 4 %in% x))
+
+# check for changes
+df <- data.frame(old = sapply(empDF[16:length(empDF)],     function(x) sum(!is.na(x))),
+                 new = sapply(empCOPY[16:length(empCOPY)], function(x) sum(!is.na(x))))
+df$diff <- df$old - df$new
+View(df)
+rm(df)
 
 
 
 
-
-
-# EUCAST EXPECTED PHENOTYPES:
+####################################################
+############ EUCAST EXPECTED PHENOTYPES ############
+####################################################
 library(readxl)
 path <- '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/'
 R1 <- read_xlsx(paste0(path, 'Table1_exp_res.xlsx'))
@@ -188,11 +199,8 @@ rs <- rbind(rs %>%
                filter(any(!is.na(RULE)), 
                       .by=c(ORGANISMS, ABX)) %>% 
                filter(!is.na(RULE))) # one is not NA -> keep only not NA rules
-rs <- rs %>%
-   tidyr::pivot_wider(names_from = ABX,
-               values_from = RULE)
-rm(r, s, R1, R2, R3, R4, R5, S1, S2, S3, path)
-
+rs <- rs %>% tidyr::pivot_wider(names_from = ABX, values_from = RULE)
+rm(r, s, R1, R2, R3, R4, R5, S1, S2, S3)
 
 names(rs) <- toupper(names(rs))
 
@@ -203,6 +211,11 @@ rs$ORGANISMS <- sub("Group \\[ABCG] Beta-Hemolytic Streptococci", "Group \\[ABCG
 
 empTEST <- empCOPY
 bug_rows <- sapply(rs$ORGANISMS, function(x) grep(x, empTEST$BUG))
+sort(lengths(bug_rows))
+sum(lengths(bug_rows)) / nrow(empDF) # 70%
+u_bug_rows <- sort(unlist(bug_rows))
+head(sort(table(empDF$BUG[-u_bug_rows]), decreasing = TRUE), n=12) # frequent bugs for which we don't have imputation rules
+rm(u_bug_rows)
 
 
 start <- Sys.time()
@@ -229,11 +242,11 @@ for (b in 1:nrow(rs)){ #bug by bug
    }
 }
 end <- Sys.time()
-print(end - start) 
+print(end - start) # 0.74 seconds
 rm(a, b, cl, end, rws, start, val, rs, bug_rows)
 
-df <- data.frame(old = sapply(empCOPY[14:length(empCOPY)], function(x) sum(!is.na(x))),
-                 new = sapply(empTEST[14:length(empTEST)], function(x) sum(!is.na(x))))
+df <- data.frame(old = sapply(empCOPY[16:length(empCOPY)], function(x) sum(!is.na(x))),
+                 new = sapply(empTEST[16:length(empTEST)], function(x) sum(!is.na(x))))
 df$diff <- df$old - df$new
 View(df)
 rm(df)
@@ -254,6 +267,8 @@ rownames(StrepRules) <- NULL
 
 rules <- full_join(StaphRules, StrepRules) # join Staph and Strep rules
 rm(StaphRules, StrepRules, path)
+rules$BUG[rules$BUG == 'Beta-Hemolytic streptococci'] <- 'Beta Hemolytic Streptococci'
+rules$BUG[rules$BUG == 'Viridans group streptococci'] <- 'Viridans Streptococci'
 
 ### ABX ####
 
@@ -292,7 +307,7 @@ n <- function(char){
    return(char)
 }
 
-op <- function(val, r){
+op <- function(val, r) {
    #if(val == "0" || val == "1") return(as.integer(val))          # left from old version, useful if want to combine versions later
    if(val == "NA") return(NA)
    if(grepl("^E", val)){                                          #E indicates that the ast score of the named antibiotic should be the output, unless that score is also missing (NA)
@@ -353,6 +368,7 @@ op <- function(val, r){
 
 empTEST2 <- empTEST
 bug_rows <- sapply(rules$BUG, function(x) grep(x, empTEST2$BUG))
+lengths(bug_rows)
 
 start <- Sys.time()
 for(b in 1:nrow(rules)){ #bug/species by bug/species in rules
@@ -373,29 +389,29 @@ for(b in 1:nrow(rules)){ #bug/species by bug/species in rules
       }
    }
 }
-print(Sys.time() - start)
+print(Sys.time() - start) # 50 seconds
 rm(a, AMINOPENICILLINS, b, BetaHemolytic, CARBAPENEMS, CEPCAR, CEPHALOSPORINS, CEPHg1, CEPHg2, CEPHg3, CEPHg4, CEPHg5, cl, FLUOROQUINOLONES,
    LINCOSAMIDES, MACLIN, MACROLIDES, r, rws, start, val, Viridans, n, op, bug_rows, rules)
 
 
-df <- data.frame(old = sapply(empTEST[14:length(empTEST)], function(x) sum(!is.na(x))),
-                 new = sapply(empTEST2[14:length(empTEST2)], function(x) sum(!is.na(x))))
+df <- data.frame(old = sapply(empTEST[16:length(empTEST)], function(x) sum(!is.na(x))),
+                 new = sapply(empTEST2[16:length(empTEST2)], function(x) sum(!is.na(x))))
 df$diff <- df$old - df$new
 View(df)
 rm(df)
 
 
 
-df <- data.frame(old = sapply(empDF[14:length(empDF)], function(x) sum(!is.na(x))),
-                 new = sapply(empTEST2[14:length(empTEST2)], function(x) sum(!is.na(x))))
-df$diff <- df$old - df$new
+df <- data.frame(old = sapply(empDF[16:length(empDF)], function(x) sum(!is.na(x))),
+                 new = sapply(empTEST2[16:length(empTEST2)], function(x) sum(!is.na(x))))
+df$diff <- df$new - df$old
 View(df)
 rm(df)
 
 
 empDF <- empTEST2
 
-save(empDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_imputed.Rdata')
+save(empDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed.Rdata')
 
 
 

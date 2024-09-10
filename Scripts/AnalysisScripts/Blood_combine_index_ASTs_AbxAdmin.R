@@ -6,13 +6,12 @@ load(file = paste0(data_path_name, 'ASTs_blood_2015_2023.Rdata'))
 load(file = paste0(data_path_name, 'ALL_CLEANED_2017_2023_AbxAdmin.Rdata'))
 
 # only have medication administration data from 2017 - 2023
-astDF <- empDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2017:2023)) #    55,959 -->    44,376
-abxDF <- abxDF %>% filter(PERSON_ID %in% unique(astDF$PERSON_ID))                # 9,681,748 --> 2,588,417
-rm(empDF)
+astDF <- astDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2017:2023)) #    55,959 -->    43,787
+abxDF <- abxDF %>% filter(PERSON_ID %in% unique(astDF$PERSON_ID))                # 9,681,748 --> 2,588,330
 
-length(unique(astDF$PERSON_ID)) # 35,672
-length(unique(abxDF$PERSON_ID)) # 33,642
-length(intersect(astDF$PERSON_ID, abxDF$PERSON_ID)) # 33,642
+length(unique(astDF$PERSON_ID)) # 35,666
+length(unique(abxDF$PERSON_ID)) # 33,638
+length(intersect(astDF$PERSON_ID, abxDF$PERSON_ID)) # 33,638
 
 
 # add in a column describing the date of the most recent antibiotic prescription
@@ -44,29 +43,34 @@ abxDF <- abxDF %>%
 #    select(BUG2, AMPICILLIN) %>% table()
 
 astDF <- astDF %>%
-   select(!CEFEPIME:DELAFLOXACIN) %>%
-   summarise(ORDER_DATE = min(ORDER_DATE),
-             RESULT_DATE = min(RESULT_DATE),
-             BUG = list(sort(unique(BUG))),
-             NEXT_ORDER_DAY = min(NEXT_ORDER_DAY),
-             NEXT_RESULT_DAY = min(NEXT_RESULT_DAY),
-             .by = c(PERSON_ID, ORDER_DAY, MULT_ISO)) %>%
+   # select(!CEFEPIME:DELAFLOXACIN) %>%
+   # summarise(ORDER_DATE = min(ORDER_DATE),
+   #           RESULT_DATE = min(RESULT_DATE),
+   #           BUG = list(sort(unique(BUG))),
+   #           NEXT_ORDER_DAY = min(NEXT_ORDER_DAY),
+   #           NEXT_RESULT_DAY = min(NEXT_RESULT_DAY),
+   #           .by = c(PERSON_ID, ORDER_DAY, MULT_ISO)) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   mutate(MULT_BLOOD_ISO = n() > 1L) %>%
+   # slice_min(RESULT_DATE, with_ties = FALSE) %>%
+   ungroup() %>%
+   relocate(MULT_BLOOD_ISO, .before=BUG) %>%
    mutate(ORDER_DAY = as.Date(substr(ORDER_DATE,1,10)),
           RESULT_DAY = as.Date(substr(RESULT_DATE,1,10))) %>%
    mutate(CONTAM = case_when(
       NEXT_RESULT_DAY <= RESULT_DAY ~ 2,
       NEXT_ORDER_DAY < RESULT_DAY ~ 1
    )) %>%
-   mutate(MULT_BLOOD_ISO = lengths(BUG) > 1L) %>%
    select(-NEXT_ORDER_DAY, -NEXT_RESULT_DAY) %>%
    relocate(RESULT_DAY, .after=ORDER_DAY) %>%
    relocate(ORDER_DATE, RESULT_DATE, .before=ORDER_DAY) %>%
    relocate(BUG, .after=CONTAM)
-# group_by(PERSON_ID, ORDER_DAY) %>%
-# mutate(MULT_BLOOD_ISO = n() > 1L) %>%
-# slice_min(RESULT_DATE, with_ties = FALSE) %>%
-# ungroup() %>%
-# relocate(MULT_BLOOD_ISO, .before=BUG) # ~1/2 of the multiple isolate infections had multiple blood isolates
+
+nrow(astDF) # 43,787
+astDF %>% count(MULT_BLOOD_ISO) # 10,825
+astDF %>% group_by(PERSON_ID, ORDER_DAY) # 37,976
+
+
 
 
 ## DIFFERENCES BETWEEN ORDER_TIMES for multiple isolates
@@ -108,22 +112,23 @@ astDF <- astDF %>%
 
 
 # JOIN
-empDF <- astDF %>% # 37,983 "infections"
+empDF <- astDF %>%
    mutate(JOIN_START = ORDER_DAY - 30,
           JOIN_END = RESULT_DAY + 30) %>%
    left_join(x = .,
              y = abxDF,
              by = join_by(PERSON_ID,
                           JOIN_START <= START_DATE,
-                          JOIN_END >= START_DATE)) %>% # 1,187,737
+                          JOIN_END >= START_DATE)) %>%
    # if the most recent Rx was before empiric window, get num days
    # mutate(DAYS_SINCE_PRV_ABX = ifelse(test = DATE_OF_MOST_RECENT_ABX < ORDER_DATE, 
    #                                    yes = as.numeric(lubridate::as.duration(ORDER_DATE - DATE_OF_MOST_RECENT_ABX))/86400, 
    #                                    no = NA)) %>%
    select(-JOIN_START, -JOIN_END) %>%
-   group_by(PERSON_ID, ORDER_DAY) %>% # 37,983
-   relocate(ABX, START_DATE, END_DATE, .before=BUG) %>%
-   ungroup()
+   #group_by(PERSON_ID, ORDER_DAY) %>% # 37,983
+   relocate(ABX, START_DATE, END_DATE, .before=BUG)
+   #ungroup()
+
 
 
 # determine the first 
@@ -269,7 +274,7 @@ sum(df$ABX_PROX_ORDER < 0, na.rm=T) / nrow(df)  # 18% had a prescription in the 
 }
 
 
-df <- df %>% filter(!is.na(START_DATE), ABX_PROX_ORDER >= 0) # 27,005
+df <- df %>% filter(!is.na(START_DATE), ABX_PROX_ORDER >= 0) # 27,001
 sum(df$START_DAY >= df$RESULT_DAY, na.rm=T) / nrow(df) # 1.6%
 sum(df$ABX_PROX_ORDER == 0, na.rm=T) / nrow(df) # 78.2% had first abx on order day
 sum(df$ABX_PROX_ORDER == 1, na.rm=T) / nrow(df) # 17.4% had first abx on next day
@@ -354,6 +359,7 @@ df <- empDF %>%
       b <- barplot(t, plot=F)
       barplot(t, xlab='Days since blood culture order', ylim=c(0, 1), ylab='% patients receiving abx',
               main=paste0(main, ' day result delay\n(n = ', prettyNum(num_infections,big.mark=','), ')'))
+      abline(h = 1, lty=2, lwd=0.6)
       points(x = b, y = tt, pch=16, xpd=NA)
       lines(x = b, y = tt, xpd=NA)
       abline(v = b[names(t) == main], lwd=1.1, lty=2)
@@ -378,19 +384,26 @@ rm(df, abxDF)
 
 
 
+empDF <- empDF %>% 
+   select(-BLOOD) %>% 
+   mutate(START_DAY = as.Date(substr(START_DATE,1,10))) %>% 
+   relocate(CONTAM, ABX, START_DATE, END_DATE, BUG, START_DAY, .before=CEFEPIME)
+
+start <- Sys.time()
 empDF <- empDF %>%
-   mutate(START_DAY = as.Date(substr(START_DATE,1,10))) %>%
-   #select(-ORDER_DATE, -RESULT_DATE, -BLOOD) %>%
+   group_by_all() %>% ungroup(ABX, START_DATE, END_DATE, START_DAY) %>%
    reframe(EMPIRIC0 = list(sort(unique(ABX[START_DAY == ORDER_DAY]))),
            EMPIRIC1 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+1)]))),
            EMPIRIC2 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+2) & START_DAY < RESULT_DAY]))),
            EMPIRIC3 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+3) & START_DAY < RESULT_DAY]))),
            EMPIRIC4 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+4) & START_DAY < RESULT_DAY]))),
            EMPIRIC5 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+5) & START_DAY < RESULT_DAY]))),
-           TARGETED = list(sort(unique(ABX[START_DAY == RESULT_DAY]))),
-           .by = c(PERSON_ID, ORDER_DAY, RESULT_DAY, BUG, MULT_BLOOD_ISO, CONTAM, MULT_ISO)) %>% #, INDEX_RECORD, CEFEPIME:DELAFLOXACIN)) %>%
+           TARGETED = list(sort(unique(ABX[START_DAY == RESULT_DAY])))) %>%
+   ungroup() %>%
    mutate(DELAY = as.integer(RESULT_DAY - ORDER_DAY)) %>%
    relocate(DELAY, EMPIRIC0, EMPIRIC1, EMPIRIC2, EMPIRIC3, EMPIRIC4, EMPIRIC5, TARGETED, .before=BUG)
+print(Sys.time() - start) # 15 seconds
+rm(start)
 
 
 save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
@@ -448,10 +461,10 @@ save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata')
 
 
 # DID THERAPIES NARROW IN THE TARGETED WINDOW?
-sum(lengths(empDF$TARGETED) > 0) / nrow(empDF) # 64.6%
-sum(lengths(empDF$TARGETED) < lengths(empDF$EMPIRIC0)) / nrow(empDF) # 35.7% narrowed
+sum(lengths(empDF$TARGETED) > 0) / nrow(empDF) # 64.9%
+sum(lengths(empDF$TARGETED) < lengths(empDF$EMPIRIC0)) / nrow(empDF) # 36% narrowed
 sum(lengths(empDF$TARGETED) > lengths(empDF$EMPIRIC0)) / nrow(empDF) # 25.5% broadened
-sum(lengths(empDF$TARGETED) == lengths(empDF$EMPIRIC0)) / nrow(empDF) # 38.8% stayed same
+sum(lengths(empDF$TARGETED) == lengths(empDF$EMPIRIC0)) / nrow(empDF) # 38.4% stayed same
 
 
 
@@ -605,7 +618,7 @@ sum(lengths(empDF$TARGETED) == lengths(empDF$EMPIRIC0)) / nrow(empDF) # 38.8% st
       dev.off()
    }
    {
-      pdf(file = paste0(plots_path_name, 'TargetedByBug_.pdf'), height=6.5, width=12)
+      pdf(file = paste0(plots_path_name, 'TargetedByBug.pdf'), height=6.5, width=12)
       par(mfrow=c(2, 4), mar=c(2.5, 5, 1.5, 1), mgp=c(1.25,0.4,0), tck=-0.015)
       makeBarplot('Staphylococcus epidermidis', targ=T)
       makeBarplot('Staphylococcus aureus', targ=T)
@@ -625,8 +638,8 @@ sum(lengths(empDF$TARGETED) == lengths(empDF$EMPIRIC0)) / nrow(empDF) # 38.8% st
 
 
 empDF %>% select(MULT_BLOOD_ISO, MULT_ISO) %>% table() # 61.3%
-empDF %>% count(substr(ORDER_DAY,1,4)) # ~5,400 per year
-empDF %>% filter(!MULT_BLOOD_ISO, !MULT_ISO) %>% count(substr(ORDER_DAY,1,4)) %>% summarise(sum(n)) # ~3,300 per year
+empDF %>% count(substr(ORDER_DAY,1,4)) # ~6,000 per year
+empDF %>% filter(!MULT_BLOOD_ISO, !MULT_ISO) %>% count(substr(ORDER_DAY,1,4)) # ~3,300 per year
 
 # let's look at S aureus...
 # what is treated with?

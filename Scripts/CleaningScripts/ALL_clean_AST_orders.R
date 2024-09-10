@@ -119,9 +119,18 @@ astoDF <- astoDF %>% group_by(PERSON_ID, ORDER_PROC_ID, RESULT_DATE, BLOOD, BUG)
 astoDF1 <- astoDF %>% filter(n() == 1L) %>% ungroup()
 astoDF2 <- astoDF %>% filter(n() > 1L)
 astoDF2 <- astoDF2 %>% slice_max(ORDER_DATE) %>% ungroup()
-astoDF <- rbind(astoDF1, astoDF2) %>%
-   arrange(PERSON_ID, ORDER_PROC_ID, ORDER_DATE, RESULT_DATE)
+astoDF <- rbind(astoDF1, astoDF2)
 rm(astoDF1, astoDF2)
+
+
+
+astoDF <- rbind(astoDF,
+                astoDF %>% 
+                   filter(all(!is.na(BUG)), 
+                          .by = c(PERSON_ID, ORDER_DATE, ORDER_PROC_ID, RESULT_DATE)) %>% 
+                   mutate(BUG = NA_character_))
+
+astoDF <- astoDF %>% arrange(PERSON_ID, ORDER_PROC_ID, ORDER_DATE, RESULT_DATE)
 
 
 save(astoDF, file = '~/Desktop/EHR/EHR work/RdataFiles/AST_orders_clean.Rdata')
