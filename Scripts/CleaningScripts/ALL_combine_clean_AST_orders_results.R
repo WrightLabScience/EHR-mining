@@ -1,14 +1,25 @@
 ###############################################################
-################# JOIN AST ORDERS AND RESULTS #################
+################# JOIN AST ORDERS AND RESULTS ################# # 3.4 minute run-time
 ###############################################################
+start <- Sys.time()
 library(dplyr)
 library(tidyr)
 
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/AST_orders_clean.Rdata')  # 3,074,667
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/AST_results_clean.Rdata') # 1,860,785
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'AST_orders_clean.Rdata'))  # 3,074,667
+load(file = paste0(data_path_name, 'AST_results_clean.Rdata')) # 1,789,478
 
 astrDF <- astrDF %>% rename(RESULT_DAY = RESULT_DATE)
 astoDF <- astoDF %>% mutate(RESULT_DAY = as.Date(substr(RESULT_DATE, 1, 10)))
+
+length(astoDF$ORDER_PROC_ID[which(is.na(astoDF$BUG))])
+length(astoDF$ORDER_PROC_ID[which(!is.na(astoDF$BUG))])
+length(astrDF$ORDER_PROC_ID[which(is.na(astrDF$BUG))])
+length(astrDF$ORDER_PROC_ID[which(!is.na(astrDF$BUG))])
+
+length(unique(astrDF$ORDER_PROC_ID[which(is.na(astrDF$BUG))]))
+length(intersect(astrDF$ORDER_PROC_ID[which(is.na(astrDF$BUG))],
+                 astoDF$ORDER_PROC_ID[which(!is.na(astoDF$BUG))])) # 8,257 ! for AST results that are missing BUG, a subset of AST orders have the BUG NAME!
 
 
 # first join on BUG for those orders where bug is present 
@@ -40,138 +51,72 @@ astDF_unM <- astDF_unM %>% filter(!is.na(ORDER_DATE)) # 356,225 (from 366,253)
 astDF_M   <- astDF     %>% filter(!is.na(ORDER_DATE)) # 1,443,587
 
 # combine initially matched and unmatched rows = 1,846,711
-astDF <- rbind(astDF_M, astDF_unM) # 1,850,757
+astDF <- rbind(astDF_M, astDF_unM) # 1,850,758
 astDF <- astDF %>% arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
 
 rm(astDF_M, astDF_unM, astoDF_unM, astrDF_unM)
 gc()
 
-length(unique(astDF$PERSON_ID))  # 613,829
-length(unique(astoDF$PERSON_ID)) # 613,865
-length(unique(astrDF$PERSON_ID)) # 615,872
-length(unique(astDF$ORDER_PROC_ID))  # 1,548,048
-length(unique(astoDF$ORDER_PROC_ID)) # 1,548,185
-length(unique(astrDF$ORDER_PROC_ID)) # 1,556,083
-
-
 rm(astoDF, astrDF)
-print(object.size(astDF), units='Mb') # 2,028,7 Mb
+
+# remove unnecessary variables that may obscure effective duplicates
+astDF <- astDF %>% 
+   select(-ORDER_PROC_ID, -RESULT_DAY, -PATH_NAME) %>% 
+   distinct() # 1,835,382
+
+
+### If same bug, same AST, same day, take minimum order time and minimum result date-time
+# but first, how common is this?
+astDF <- astDF %>% # 1,835,382
+   mutate(ORDER_DAY = as.Date(substr(ORDER_DATE,1,10)),
+          RESULT_DAY = as.Date(substr(RESULT_DATE,1,10))) %>%
+   relocate(ORDER_DAY, RESULT_DAY, .after=RESULT_DATE)
+
+
+# if same order_day
+astDF <- astDF %>% # 1,804,069 (1,789,627 groups) if SECOND (1,794,092 groups if FIRST)
+   group_by_all() %>%
+   ungroup(ORDER_DATE, RESULT_DATE, RESULT_DAY) # same order_day
+
+astDFm <- astDF %>% filter(n() > 1L) # 77,923 rows if first (28,494 if we do this one second)
+astDFm <- astDFm %>% # 36,633 rows if first (14,052 if we do this one second)
+   summarise(RESULT_DAY = min(RESULT_DAY),
+             ORDER_DATE = min(ORDER_DATE),
+             RESULT_DATE = min(RESULT_DATE)) %>%
+   ungroup()
+
+astDF <- astDF %>% filter(n() == 1L) %>% ungroup()
+astDF <- rbind(astDF, astDFm) %>% arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
+rm(astDFm)
+
+
+astDF <- astDF %>% # 1,835,382 rows (1,804,069 groups) if first (1,789,599 groups if second)
+   group_by_all() %>%
+   ungroup(ORDER_DATE, RESULT_DATE, ORDER_DAY) # same result_day
+
+# if same result_day, take minimum order date-time and minimum result date-time
+astDFm <- astDF %>% filter(n() > 1L) # 8,937 rows if second (59,634 if we do this one first)
+astDFm <- astDFm %>% # 4,444 rows if second (28,321 if we do this one first)
+   summarise(ORDER_DAY = min(ORDER_DAY),
+             ORDER_DATE = min(ORDER_DATE),
+             RESULT_DATE = min(RESULT_DATE)) %>%
+   ungroup()
+
+astDF <- astDF %>% filter(n() == 1L) %>% ungroup()
+astDF <- rbind(astDF, astDFm) %>% arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
+rm(astDFm)
+
+
+nrow(astDF) 
+# 1,789,627 rows (if I do same result_day first, then same order_day)
+# 1,789,599 rows (if I do same order_day first, then same result_day)
 
 
 ###################################################################################
-save(astDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
+save(astDF, file = paste0(data_path_name, '/ALL_clean_ASTs.Rdata'))
 ###################################################################################
+print(Sys.time() - start) # 3.4 minutes
 
-
-
-
-
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/plots_path_name.Rdata')
-
-# RESULT_DELAY
-astDF <- astDF %>% mutate(RESULT_DELAY = as.numeric(lubridate::as.duration(RESULT_DATE - ORDER_DATE)) / 86400)
-x <- astDF$RESULT_DELAY
-length(x[x < 1]) / length(x) * 100  # 0.03%
-length(x[x > 60]) / length(x) * 100 # 0.51%
-length(x[x > 5]) / length(x) * 100  # 11%
-length(x[x > 14]) / length(x) * 100 # 1.8%
-length(x[x > 30]) / length(x) * 100 # 0.94%
-
-median(x) # 2.7
-median(x[astDF$BLOOD]) # 3.6
-
-length(x[!astDF$BLOOD][x[!astDF$BLOOD] > 5]) / length(x[!astDF$BLOOD]) * 100  # 8.9%
-length(x[x > 5]) / length(x) * 100  # 11.1%
-length(x[astDF$BLOOD][x[astDF$BLOOD] > 5]) / length(x[astDF$BLOOD]) * 100  # 34.8%
-
-# which bugs are responsible for the increased delay of blood cultures?
-ecb <- astDF$RESULT_DELAY[astDF$BLOOD & astDF$BUG == 'Escherichia coli']
-ec <- astDF$RESULT_DELAY[!astDF$BLOOD & astDF$BUG == 'Escherichia coli']
-median(ec)  # 2.20
-median(ecb) # 2.78 (~14 hours)
-rm(ec, ecb)
-
-sab <- astDF$RESULT_DELAY[astDF$BLOOD & astDF$BUG == 'Staphylococcus aureus']
-sa <- astDF$RESULT_DELAY[!astDF$BLOOD & astDF$BUG == 'Staphylococcus aureus']
-median(sa)  # 2.75
-median(sab) # 3.16 (~9.5 hours)
-rm(sa, sab)
-
-{
-   pdf(file = paste0(plots_path_name, 'AST_result_delay.pdf'))
-   par(mfrow = c(2, 1), mar=c(4,3,2,1), mgp=c(2, 0.5, 0), tck=-0.015)
-   hist(x, xlim=c(0, 12), breaks=diff(range(x))*24, xlab='Days', main='Time between AST order and result - overall')
-   hist(x[astDF$BLOOD],  xlim=c(0, 12), breaks=diff(range(x))*24, xlab='Days', main='Time between AST order and result - blood cultures')
-   dev.off()
-}
-rm(x)
-astDF <- astDF %>% select(-RESULT_DELAY)
-
-
-
-# WHICH BUGS?
-t <- astDF %>% select(BUG, BLOOD) %>% table()
-n <- 18
-t <- t(head(t[order(t[,1], decreasing=TRUE), 2:1], n))
-colnames(t) <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1\\. \\2', colnames(t))
-colnames(t)[colnames(t) == 'Coagulase Negative Staph'] <- 'Coag Neg Staph'
-x <- barplot(rep(1,n), horiz=TRUE, plot=FALSE)
-{
-   pdf(file = paste0(plots_path_name, 'BugCounts.pdf'), height=6)
-   par(mar=c(4, 8, 1, 2), mgp=c(2, 0.5, 0), tck=-0.015)
-   barplot(t, horiz=TRUE, names.arg=rep('', n), xlim=c(0,6e5), xlab='Number of times isolated',
-           legend.text = c('blood', 'non-blood'))
-   text(x=-10000, y=x, adj=c(1, 0.5), labels=colnames(t), xpd=NA)
-   dev.off()
-}
-rm(t, x, n)
-
-
-
-num_year <- astDF %>%
-   mutate(year = substr(ORDER_DATE,1,4)) %>%
-   select(year) %>%
-   table()
-num_year <- num_year[-length(num_year)]
-
-num_year_b <- astDF %>%
-   filter(BLOOD) %>%
-   mutate(year = substr(ORDER_DATE,1,4)) %>%
-   select(year) %>%
-   table()
-num_year_b <- num_year_b[-length(num_year_b)]
-
-{
-   pdf(file = paste0(plots_path_name, 'NumberCulturesPerYear.pdf'), height=5)
-   par(mar = c(4, 5.5, 1, 1), mgp=c(2.2, 0.6, 0), tck=-0.01)
-   plot(x = as.integer(names(num_year)), y = num_year, type = 'b', pch=16,
-        xlab = 'Year', ylab='', yaxt='n')
-   title(ylab = 'Number of cultures', line=4)
-   points(x = as.integer(names(num_year_b)), y = num_year_b, type='b', pch=16, col='red')
-   axis(side = 2, at=c(11000, seq(0, 150000, 25000)), las=1, gap.axis=1e-11)
-   abline(h = 11000, lty=2)
-   legend('topleft', legend = c('overall', 'blood'), pch=16, lty=1, col=c('black', 'red'))
-   dev.off()
-}
-rm(num_year, num_year_b)
-
-
-
-
-order_hour <- table(substr(astDF$ORDER_DATE, 12,13))
-order_hour <- order_hour[names(order_hour) != '']
-result_hour <- table(substr(astDF$RESULT_DATE, 12,13))
-result_hour <- result_hour[names(result_hour) != '']
-names(order_hour) <- gsub('^0', '', names(order_hour))
-names(result_hour) <- gsub('^0', '', names(result_hour))
-{
-   pdf(file = paste0(plots_path_name, 'TimeOfDayASTordersResults.pdf'), height=4, width=9)
-   par(mfrow=c(1,2), mgp=c(2, 0.6, 0), mar=c(4, 3, 2, 1))
-   barplot(order_hour, main='AST orders', xlab = 'Hour of day')
-   barplot(result_hour, main='AST results', xlab = 'Hour of day')
-   dev.off()
-}
-rm(order_hour, result_hour)
 
 
 

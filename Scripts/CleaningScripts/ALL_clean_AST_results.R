@@ -4,7 +4,9 @@
 library(dplyr)
 library(tidyr)
 
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_sens_all_vw.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'lab_micro_sens_all_vw.Rdata'))
+
 
 # simple prep
 astrDF <- astrDF %>%
@@ -22,6 +24,7 @@ astrDF <- astrDF %>%
 
 # get just the unique pathogen names for cleaning
 source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
+astrDF <- astrDF %>% filter(!is.na(PATH_NAME))
 path_names <- astrDF %>% # 76,948
    count(PATH_NAME, sort=TRUE) %>%
    mutate(BUG = NA_character_)
@@ -31,6 +34,7 @@ path_names <- setNames(object = path_names$BUG, nm = path_names$PATH_NAME)
 astrDF <- astrDF %>%
    mutate(BUG = path_names[PATH_NAME]) %>%
    mutate(BUG = ifelse(is.na(BUG), 'Did not match', BUG))
+astrDF$BUG[which(is.na(astrDF$PATH_NAME))] <- NA
 names(astrDF$BUG) <- NULL
 rm(path_names)
 
@@ -106,19 +110,37 @@ astrDF <- astrDF %>%
 sapply(astrDF, function(x) sum(is.na(x)))
 astrDF %>% count(is.na(PATH_NAME), is.na(ANTIBIOTIC), is.na(STATUS))
 
-astrDF <- astrDF %>% filter(!is.na(PATH_NAME), !is.na(ANTIBIOTIC)) # 21,510,091 --> 21,486,898
+# astrDF <- astrDF %>% filter(!is.na(PATH_NAME), !is.na(ANTIBIOTIC)) # 21,510,091 --> 21,486,898
 astrDF %>% count(is.na(STATUS)) # 1,650,554
 
 # get all antibiotic names
 abx <- unique(astrDF$ANTIBIOTIC)
-save(abx, file = '~/Desktop/EHR/EHR work/data/ast_antibiotics.Rdata')
+save(abx, file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/ast_antibiotics.Rdata')
 
-astrDF <- astrDF %>% # 21,486,898 --> 1,860,785
-   pivot_wider(names_from = ANTIBIOTIC,
+######################################################################################
+save(astrDF, file = paste0(data_path_name, 'lab_micro_sens_all_cleaned_long.Rdata'))
+######################################################################################
+
+
+
+library(dplyr)
+library(tidyr)
+
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = paste0(data_path_name, 'lab_micro_sens_all_cleaned_long.Rdata'))
+
+
+# pivot to wide
+start <- Sys.time()
+astrDF <- astrDF %>% # 21,486,898 --> 1,789,478
+   pivot_wider(id_cols = c(PERSON_ID, ORDER_PROC_ID, RESULT_DATE, BUG),
+               names_from = ANTIBIOTIC,
                values_from = STATUS,
-               values_fn = max)
+               values_fn = max,
+               unused_fn = ~ paste(unique(.), collapse=', ')) %>%
+   relocate(PATH_NAME, .after=BUG)
+print(Sys.time() - start) # 1.4 minutes
 
-# astrDF <- astrDF %>% distinct() # 1,860,372 --> 1,846,711
 
 astrDF <- astrDF %>%
    mutate(OXACILLIN = case_when(

@@ -1,0 +1,285 @@
+---
+title: "CombinedASTsAbxAdminLONG"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r echo=FALSE, message=FALSE}
+library(dplyr)
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
+load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_LONG.Rdata'))
+
+
+# distribution of abx admin proximity to AST order
+t <- table(as.Date(substr(empDF$START_DATE,1,10)) - empDF$ORDER_DAY)
+barplot(t, xlab='Days since blood culture')
+barplot(t[names(t) %in% as.character(-6:30)], xlab='Days since blood culture')
+
+
+# determine the first 
+df <- empDF %>%
+   select(PERSON_ID, ORDER_DAY, RESULT_DAY, START_DATE, BUG) %>%
+   distinct() %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   slice_min(START_DATE, with_ties=FALSE) %>%
+   ungroup() %>%
+   mutate(START_DAY = as.Date(substr(START_DATE,1,10))) %>%
+   mutate(ABX_PROX_ORDER = as.integer(START_DAY - ORDER_DAY))
+
+
+
+# PLOT WHEN ANTIBIOTICS ARE ADMINISTERED RELATIVE TO AST ORDER DAY
+t <- table(df$ABX_PROX_ORDER)
+t <- c(setNames(sum(t[names(t) %in% as.character(-30:-2)]), '<-1d'),
+       t[names(t) %in% as.character(-1:3)],
+       setNames(sum(t[names(t) %in% as.character(4:200)]), '>3d'),
+       setNames(sum(is.na(df$ABX_PROX_ORDER)), 'never'))
+t <- t / sum(t)
+t <- t*100
+b <- barplot(t, plot=FALSE)
+par(tck=-0.015, mgp=c(3, 0.75, 0), mar=c(5,3,3,3))
+barplot(t, ylim=c(0, 60), yaxt='n', names.arg=NA, main='When was the first antibiotic administered?', xlab='Days since AST order')
+text(x = b, y = -6, labels=names(t), xpd=NA)
+text(x = b, y = t + 3, labels=paste0(round(t,1),'%'))
+
+
+
+### PLOT PROPORTION OF TOP BUGS THAT WERE UNTREATED
+{
+   bugs <- tapply(df$BUG, is.na(df$START_DATE), unlist)
+   names(bugs) <- c('Treated', 'Untreated')
+   lengths(bugs) # 36,564 treated, 4,458 untreated
+   x <- sort(table(bugs$Treated), decreasing=TRUE)
+   t <- data.frame(unname(x), row.names=names(x))
+   t <- t[names(t) == 'Freq']
+   names(t) <- 'Treated'
+   t$Untreated <- sort(table(bugs$Untreated), decreasing=TRUE)[rownames(t)]
+   t$Untreated[is.na(t$Untreated)] <- 0
+   t$Total <- t$Treated + t$Untreated
+   t$FracUntr <- t$Untreated / t$Total
+   t <- t[t$Total >= 100, ]
+   t <- t[order(t$FracUntr, decreasing=TRUE), ]
+   t <- t[t$FracUntr > 0.1, ]
+   t <- t[which(t[, 'Untreated'] > 0.07), ]
+   w <- which(grepl('^([A-Z])[a-z]+ ([a-z]+)$', rownames(t)) & !grepl('.+ species$', rownames(t)))
+   rownames(t)[w] <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1. \\2', rownames(t)[w])
+   rownames(t)[rownames(t) == 'Coagulase Negative Staph'] <- 'Coag. Neg. Staph'
+   rownames(t)[rownames(t) == 'Viridans Streptococci'] <- 'Viridans Strep'
+   rownames(t)[rownames(t) == 'Streptococcus mitis/oralis group'] <- 'S. mitis/oralis group'
+   rownames(t)[rownames(t) == 'Did not match'] <- 'unknown/rare pathogen'
+   t <- t(as.matrix(t))
+   b <- barplot(t[1:2,], horiz=TRUE, plot=FALSE)
+   {
+      #pdf(file = paste0(plots_path_name, 'BugsTreatedVsUntreated.pdf'), height=7, width=8.5)
+      par(mar=c(5, 14.1, 5.25, 6))
+      barplot(t['FracUntr',], xlim=c(0,1), col='#555555', horiz=TRUE, names.arg=rep('', ncol(t)), main='Proportion of bloodstream infections where no antibiotic given')
+      text(x=-0.025, y=b, adj=1, labels=colnames(t), xpd=NA)
+      text(x=1, y=b, adj=1, labels=prettyNum(t['Untreated',], big.mark=','), xpd=NA)
+      text(x=1, y=b[length(b)] + unique(round(diff(b),1)), adj=1, labels='No. infections', font=2, xpd=NA)
+      text(x=t['FracUntr',]+0.005, y=b, labels=round(t['FracUntr',], 2), adj=0, xpd=NA)
+      #dev.off
+   }
+   rm(b, t, x, bugs, w)
+}
+
+# WHAT WERE THE BUGS FOR THOSE THAT WERE NOT GIVEN ABX UNTIL RESULTS WERE KNOWN?
+{
+   bugs <- tapply(df$BUG, df$START_DAY >= df$RESULT_DAY, unlist)
+   lengths(bugs) # 420 true
+   names(bugs) <- c('Emp', 'Targ')
+   x <- sort(table(bugs$Emp), decreasing=TRUE)
+   t <- data.frame(unname(x), row.names=names(x))
+   t <- t[names(t) == 'Freq']
+   names(t) <- 'Emp'
+   t$Targ <- sort(table(bugs$Targ), decreasing=TRUE)[rownames(t)]
+   t$Targ[is.na(t$Targ)] <- 0
+   t$Total <- t$Emp + t$Targ
+   t$FracUntr <- t$Targ / t$Total
+   t <- t[t$Targ > 4, ]
+   t <- t[order(t$FracUntr, decreasing=TRUE), ]
+   w <- which(grepl('^([A-Z])[a-z]+ ([a-z]+)$', rownames(t)) & !grepl('.+ species$', rownames(t)))
+   rownames(t)[w] <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1. \\2', rownames(t)[w])
+   rownames(t)[rownames(t) == 'Coagulase Negative Staph'] <- 'Coag. Neg. Staph'
+   #rownames(t)[rownames(t) == 'Viridans Streptococci'] <- 'Viridans Strep'
+   #rownames(t)[rownames(t) == 'Streptococcus mitis/oralis group'] <- 'S. mitis/oralis group'
+   #rownames(t)[rownames(t) == 'Did not match'] <- 'unknown/rare pathogen'
+   t <- t(as.matrix(t))
+   b <- barplot(t[1:2,], horiz=TRUE, plot=FALSE)
+   {
+      #pdf(file = paste0(plots_path_name, 'BugsNotTreatedUntilTargeted.pdf'), height=5, width=7)
+      par(mar=c(5, 14.1, 5.25, 6))
+      barplot(t['FracUntr',], xlim=c(0,1), col='#555555', horiz=TRUE, names.arg=rep('', ncol(t)), main='Proportion of bloodstream infections with no empiric therapy')
+      text(x=-0.025, y=b, adj=1, labels=colnames(t), xpd=NA)
+      text(x=1, y=b, adj=1, labels=prettyNum(t['Targ',], big.mark=','), xpd=NA)
+      text(x=1, y=b[length(b)] + unique(round(diff(b),1)), adj=1, labels='No. infections', font=2, xpd=NA)
+      text(x=t['FracUntr',]+0.005, y=b, labels=round(t['FracUntr',], 2), adj=0, xpd=NA)
+      #dev.off
+   }
+   rm(b, t, x, bugs, w)
+}
+
+# WHAT WERE THE BUGS FOR THOSE THAT WERE GIVEN ABX BEFORE ORDER DATE?
+{
+   bugs <- tapply(df$BUG, df$START_DAY < df$ORDER_DAY, unlist)
+   lengths(bugs) # 7,424 true
+   names(bugs) <- c('Emp', 'Prior')
+   x <- sort(table(bugs$Emp), decreasing=TRUE)
+   t <- data.frame(unname(x), row.names=names(x))
+   t <- t[names(t) == 'Freq']
+   names(t) <- 'Emp'
+   t$Prior <- sort(table(bugs$Prior), decreasing=TRUE)[rownames(t)]
+   t$Prior[is.na(t$Prior)] <- 0
+   t$Total <- t$Emp + t$Prior
+   t$FracPrior <- t$Prior / t$Total
+   t <- t[order(t$FracPrior, decreasing=TRUE), ]
+   t <- t[t$Prior > 4, ]
+   t <- t[t$Total >= 100, ]
+   t <- t[t$FracPrior >= 0.2, ]
+   w <- which(grepl('^([A-Z])[a-z]+ ([a-z]+)$', rownames(t)) & !grepl('.+ species$', rownames(t)))
+   rownames(t)[w] <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1. \\2', rownames(t)[w])
+   #rownames(t)[rownames(t) == 'Coagulase Negative Staph'] <- 'Coag. Neg. Staph'
+   #rownames(t)[rownames(t) == 'Viridans Streptococci'] <- 'Viridans Strep'
+   #rownames(t)[rownames(t) == 'Streptococcus mitis/oralis group'] <- 'S. mitis/oralis group'
+   rownames(t)[rownames(t) == 'Did not match'] <- 'unknown/rare pathogen'
+   t <- t(as.matrix(t))
+   b <- barplot(t[1:2,], horiz=TRUE, plot=FALSE)
+   {
+      #pdf(file = paste0(plots_path_name, 'BugsTreatedPriorToEmpiric.pdf'), height=5.5, width=8.5)
+      par(mar=c(5, 14.1, 5.25, 6))
+      barplot(t['FracPrior',], xlim=c(0,1), col='#555555', horiz=TRUE, names.arg=rep('', ncol(t)), main='Proportion of bloodstream infections with pre-empiric treatment')
+      text(x=-0.025, y=b, adj=1, labels=colnames(t), xpd=NA)
+      text(x=1, y=b, adj=1, labels=prettyNum(t['Prior',], big.mark=','), xpd=NA)
+      text(x=1, y=b[length(b)] + unique(round(diff(b),1)), adj=1, labels='No. infections', font=2, xpd=NA)
+      text(x=t['FracPrior',]+0.005, y=b, labels=round(t['FracPrior',], 2), adj=0, xpd=NA)
+      #dev.off
+   }
+   rm(b, t, x, bugs, w)
+}
+
+# WHAT WERE THE AST ORDER NAMES FOR THOSE NOT TREATED?
+{
+   # load(file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_result_all_vw.Rdata')
+   # astoDF <- astoDF %>%
+   #    filter(PERSON_ID %in% unique(df$PERSON_ID[is.na(df$START_DATE)])) %>%
+   #    select(PERSON_ID, ORDER_NAME, ORDER_DATE, RESULT_DATE, RESULT_VALUE, SPECIMEN_TYPE) %>%
+   #    mutate(across(contains('DATE'), ~ strptime(., format='%m/%d/%Y %T')))
+   # x <- df %>% 
+   #    filter(is.na(START_DATE)) %>% # 4,131
+   #    left_join(y = astoDF,
+   #              by = join_by(PERSON_ID, ORDER_DATE, RESULT_DATE)) # 35,997
+   # x %>% filter(RESULT_VALUE == 'NOT DETECTED')
+}
+
+
+df <- df %>% filter(!is.na(START_DATE), ABX_PROX_ORDER >= 0) # 27,001
+sum(df$START_DAY >= df$RESULT_DAY, na.rm=T) / nrow(df) # 2.6%
+sum(df$ABX_PROX_ORDER == 0, na.rm=T) / nrow(df) # 77.3% had first abx on order day
+sum(df$ABX_PROX_ORDER == 1, na.rm=T) / nrow(df) # 17.2% had first abx on next day
+sum(df$ABX_PROX_ORDER == 2, na.rm=T) / nrow(df) #  2.3% had first abx on 3rd day
+sum(df$ABX_PROX_ORDER == 3, na.rm=T) / nrow(df) #  0.6% had first abx on 3rd day
+sum(df$ABX_PROX_ORDER > 3, na.rm=T) / nrow(df)  #  2.5% had first abx after 3rd day
+
+
+# PLOT WHICH ANTIBIOTICS ARE GIVEN ON A TREATED INFECTION BASIS
+{
+   num_infections <- nrow(empDF %>% filter(!is.na(START_DATE)) %>% group_by(PERSON_ID, ORDER_DATE) %>% group_keys())
+   t <- empDF %>% 
+      select(PERSON_ID, ORDER_DAY, ABX) %>%
+      distinct() %>%
+      select(ABX) %>% table()
+   t <- head(sort(t, decreasing=TRUE), n=12)
+   t <- t / num_infections
+   x <- barplot(t, horiz=TRUE, plot=F)
+   {
+      #pdf(file = paste0(plots_path_name, 'AbxCounts.pdf'), width=6, height=5)
+      par(mar=c(4, 12, 3, 3))
+      barplot(t, horiz=TRUE, names.arg=NA, xlim=c(0,1), xaxt='n', main='Percentage of infections treated')
+      text(x = -0.01, y = x, adj=1, labels=stringr::str_to_sentence(names(t)), xpd=NA)
+      text(x = t+0.01, y=x, adj=0, labels=paste0(round(t,3)*100, '%'))
+      #dev.off()
+   }
+   rm(t, x, num_infections)
+}
+
+
+# still contains rows where antibiotics were prescribed leading up to empiric window
+df <- empDF %>%
+   filter(!is.na(START_DATE)) %>%
+   filter(START_DATE >= ORDER_DATE) %>%
+   mutate(across(contains('DATE'), ~ as.Date(substr(.,1,10)))) %>%
+   select(PERSON_ID, ORDER_DATE, RESULT_DATE, START_DATE) %>%
+   distinct() %>%
+   mutate(X = as.integer(START_DATE - ORDER_DATE),
+          D = as.integer(RESULT_DATE - ORDER_DATE))
+
+# PLOT NUMBER OF PATIENTS RECEIVING ANTIBIOTICS ON EACH DAY - BROKEN DOWN BY RESULT DELAY
+{
+   df %>% count(D, sort=TRUE)
+   # 3, 6, 2, 4, 5, 7
+   makeBarplot <- function(main='') {
+      x <- df %>% filter(D == as.integer(main))
+      x <- x %>% mutate(RX=1) %>% 
+         tidyr::pivot_wider(id_cols = c(PERSON_ID, ORDER_DATE), names_from=X, values_from=RX, values_fill=0) %>% 
+         select(`0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10`)
+      num_infections <- nrow(x)
+      t <- colSums(x) / num_infections
+      x <- x %>%
+         mutate(`1` = ifelse(`0` == 1, 1, `1`)) %>%
+         mutate(`2` = ifelse(`1` == 1, 1, `2`)) %>%
+         mutate(`3` = ifelse(`2` == 1, 1, `3`)) %>%
+         mutate(`4` = ifelse(`3` == 1, 1, `4`)) %>%
+         mutate(`5` = ifelse(`4` == 1, 1, `5`)) %>%
+         mutate(`6` = ifelse(`5` == 1, 1, `6`)) %>%
+         mutate(`7` = ifelse(`6` == 1, 1, `7`)) %>%
+         mutate(`8` = ifelse(`7` == 1, 1, `8`)) %>%
+         mutate(`9` = ifelse(`8` == 1, 1, `9`)) %>%
+         mutate(`10` = ifelse(`9` == 1, 1, `10`))
+      tt <- colSums(x) / num_infections
+      b <- barplot(t, plot=F)
+      barplot(t, xlab='Days since blood culture order', ylim=c(0, 1), ylab='% patients receiving abx',
+              main=paste0(main, ' day result delay\n(n = ', prettyNum(num_infections,big.mark=','), ')'))
+      abline(h = 1, lty=2, lwd=0.6)
+      points(x = b, y = tt, pch=16, xpd=NA)
+      lines(x = b, y = tt, xpd=NA)
+      abline(v = b[names(t) == main], lwd=1.1, lty=2)
+      text(x = b[names(t) == main]+0.1, y=0.95, adj=0, labels='result day', font=3)
+   }
+   {
+      #pdf(file = paste0(plots_path_name, 'TimingOfAbxAdmin.pdf'), width=9, height=6)
+      par(mfrow=c(2,3), mgp=c(1.6, 0.4, 0), mar=c(3, 3, 3.5, 1), tck=-0.015)
+      makeBarplot(main='2')
+      makeBarplot(main='3')
+      makeBarplot(main='4')
+      makeBarplot(main='5')
+      makeBarplot(main='6')
+      makeBarplot(main='7')
+      #dev.off()
+   }
+   rm(makeBarplot)
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

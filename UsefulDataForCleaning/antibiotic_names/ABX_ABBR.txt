@@ -44,6 +44,7 @@ Kanamycin KAN Aminoglycoside
 Levofloxacin LVX Fluoroquinolone
 Linezolid LZD Oxazolidinones
 Meropenem MEM Carbapenem
+Meropenem/vaborbactam MVB Carbapenem+adjuvant
 Metronidazole MET Nitroimidazole
 Minocycline MIN Tetracycline
 Moxifloxacin MXF Fluoroquinolone
