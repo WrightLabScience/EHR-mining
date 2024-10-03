@@ -1,18 +1,16 @@
 library(dplyr)
 
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'ALL_clean_ASTs.Rdata'))
-print(object.size(astDF), units='Mb') # 1,790.4 Mb
+load(file = paste0(data_path_name, 'ALL_clean_ASTs.Rdata')) # 1,734,028
+print(object.size(astDF), units='Mb') # 1,803.7 Mb
 
 # Remove any Coagulase-negative Staph species if they appear in blood cultures
-astDF <- astDF %>% filter(!(BLOOD & grepl('Staph', BUG) & !grepl('Staphylococcus aureus', BUG))) # 1,734,028 --> 1,697,680
-# Remove candida?
-astDF <- astDF %>% filter(!grepl('Cryptococcus|Aspergillus|Candida', BUG)) # 1,691,137
+astDF <- astDF %>% filter(!(BLOOD & grepl('Staph', BUG) & !grepl('Staphylococcus aureus', BUG))) # 1,697,680
 
 
 # only take 2015 - 2023
-astDF <- astDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2015:2023)) # 1,164,988
-length(unique(astDF$PERSON_ID)) # 440,285
+astDF <- astDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2015:2023)) # 1,164,985
+length(unique(astDF$PERSON_ID)) # 440,282
 
 
 ##### REMOVE NON-INDEX CULTURES - FLAG OTHER CULTURES ####
@@ -31,8 +29,8 @@ astDF <- astDF %>%
 astDF$FIRST_RECORD[1] <- TRUE
 astDF$MULT_ISO[1] <- (astDF$ORDER_DAY[1] == lead(astDF$ORDER_DAY)[1] & astDF$PERSON_ID[1] == lead(astDF$PERSON_ID)[1])
 astDF$MULT_ISO[nrow(astDF)] <- (astDF$ORDER_DAY[nrow(astDF)] == lag(astDF$ORDER_DAY)[nrow(astDF)]  & astDF$PERSON_ID[nrow(astDF)] == lag(astDF$PERSON_ID)[nrow(astDF)])
-sum(astDF$MULT_ISO) / nrow(astDF)     # 32.5%
-sum(astDF$FIRST_RECORD) / nrow(astDF) # 36.6%
+sum(astDF$MULT_ISO) / nrow(astDF)     # 28.9%
+sum(astDF$FIRST_RECORD) / nrow(astDF) # 37.8%
 
 # calculate days since previous culture
 astDF$DAYS_SINCE_PRV_CULTURE <- as.integer(astDF$ORDER_DAY - lag(astDF$ORDER_DAY))
@@ -49,8 +47,27 @@ while(length(w) > 0) {
    shift <- shift + 1
    w <- w[which(astDF$PERSON_ID[w + shift] == astDF$PERSON_ID[w] & astDF$ORDER_DAY[w + shift] == astDF$ORDER_DAY[w])]
 }
+rm(shift, w)
 # patient's first records for multi-isolates are also screwed up, mark them as TRUE
 astDF$FIRST_RECORD[is.na(astDF$DAYS_SINCE_PRV_CULTURE)] <- TRUE
+
+
+# # Indicate whether previous culture was blood
+# astDF$LAST_CULT_BLOOD <- lag(astDF$BLOOD)
+# astDF$LAST_CULT_BLOOD[astDF$FIRST_RECORD] <- NA
+# astDF <- astDF %>% relocate(LAST_CULT_BLOOD, .after=BLOOD)
+# astDF %>% filter(MULT_ISO)
+# astDF <- rbind(astDF %>% filter(!(MULT_ISO & !FIRST_RECORD)), # similar problem as above, different solution
+#                astDF %>% 
+#                   filter(MULT_ISO & !FIRST_RECORD) %>%
+#                   group_by(PERSON_ID, ORDER_DAY) %>% 
+#                   mutate(LAST_CULT_BLOOD = any(LAST_CULT_BLOOD))) %>%
+#    arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
+# 
+# # for 1/3 of blood cultures, the previous culture was also blood, 10X more than other cultures
+# astDF %>% filter(BLOOD) %>% count(LAST_CULT_BLOOD)  # ~1/3
+# astDF %>% filter(!BLOOD) %>% count(LAST_CULT_BLOOD) # ~1/30
+
 
 
 # Indicate whether the current culture has subsequent culture with results BEFORE this one
@@ -63,31 +80,34 @@ astDF %>% count(BLOOD & DAYS_TO_NEXT_RESULT < 0) # ~11K (~1%)
 
 astDF %>% count(DAYS_TO_NEXT_RESULT == 0, MULT_ISO) # are these behaving correctly?
 #   `DAYS_TO_NEXT_RESULT == 0` MULT_ISO      n
-# 1 FALSE                      FALSE     ~431K - single isolate with some future culture
-# 5 NA                         FALSE     ~380K - single isolate with no future culture
-# 3 TRUE                       FALSE        90 - single isolate with identical result_date-time as next culture
+# 1 FALSE                      FALSE     ~444K - single isolate with some future culture
+# 5 NA                         FALSE     ~386K - single isolate with no future culture
+# 3 TRUE                       FALSE        91 - single isolate with identical result_date-time as next culture
 
-# 4 TRUE                       TRUE      ~184K - multiple isolates on same order_day - not last in "series"
-# 2 FALSE                      TRUE      ~144K - multiple isolates on same order_day - last in "series" - some future culture
-# 6 NA                         TRUE       ~61K - multiple isolates on same order-day - last in "series" - no future culture
+# 4 TRUE                       TRUE      ~149K - multiple isolates on same order_day - not last in "series"
+# 2 FALSE                      TRUE      ~134K - multiple isolates on same order_day - last in "series" - some future culture
+# 6 NA                         TRUE       ~55K - multiple isolates on same order-day - last in "series" - no future culture
 
 
 # Indicate if positive culture within X days. DAYS_TO_NEXT_CULTURE?
 astDF$DAYS_TO_NEXT_CULTURE <- lead(astDF$DAYS_SINCE_PRV_CULTURE)
 astDF <- astDF %>% relocate(DAYS_TO_NEXT_CULTURE, .after=DAYS_SINCE_PRV_CULTURE)
 
-# Indicate if multiple blood isolates
-astDF <- astDF %>%
-   group_by(PERSON_ID, ORDER_DAY, BLOOD) %>%
-   mutate(MULT_BLOOD_ISO = BLOOD & n() > 1L) %>%
-   ungroup() %>%
-   relocate(MULT_BLOOD_ISO, .after=MULT_ISO)
+# # Indicate if multiple blood isolates
+# astDF <- astDF %>%
+#    group_by(PERSON_ID, ORDER_DAY, BLOOD) %>%
+#    mutate(MULT_BLOOD_ISO = BLOOD & n() > 1L) %>%
+#    ungroup() %>%
+#    relocate(MULT_BLOOD_ISO, .after=MULT_ISO)
+# 
+# astDF %>% count(MULT_ISO, MULT_BLOOD_ISO)
+# astDF %>% count(BLOOD)
 
 
 
 ### ignore isolates, collapse to 1 culture per day
 df <- astDF %>%
-   select(PERSON_ID, FIRST_RECORD, BLOOD, ORDER_DAY, DAYS_SINCE_PRV_CULTURE, MULT_BLOOD_ISO, MULT_ISO) %>% 
+   select(PERSON_ID, FIRST_RECORD, BLOOD, ORDER_DAY, DAYS_SINCE_PRV_CULTURE, MULT_ISO) %>% 
    distinct()
 df$LAST_CULT_BLOOD <- lag(df$BLOOD)
 df$LAST_CULT_BLOOD[df$FIRST_RECORD] <- NA
@@ -133,7 +153,7 @@ t <- df %>%
 
 plot(x = t$DAYS_SINCE_PRV_CULTURE, y = t$pcnt, ylim=c(0, 0.65), ylab='', pch=16, cex=0.5,
      xlab = 'Days since previous culture', main='Proportion previous cultures = blood')
-lines(stats::filter(t$pcnt, rep(1/5, 5), sides=2), lwd=2)
+lines(stats::filter(t$pcnt, rep(1/4, 4), sides=2), lwd=2)
 
 df %>% count(BLOOD) # ~61K
 
@@ -145,15 +165,15 @@ df %>% count(BLOOD) # ~61K
 
 # THIS ALL MEANS THAT FOR BLOODSTREAM
 astDF %>%
-   filter(BLOOD) %>%              # 70,312 isolates
-   group_by(PERSON_ID, ORDER_DAY) # 59,503 infections
+   filter(BLOOD) %>%              # ~66K isolates
+   group_by(PERSON_ID, ORDER_DAY) # ~61K infections
 astDF %>%
-   filter(BLOOD, DAYS_SINCE_PRV_CULTURE > 14L | FIRST_RECORD) %>% # 55,499 isolates
-   group_by(PERSON_ID, ORDER_DAY)                                 # 46,967 infections
+   filter(BLOOD, DAYS_SINCE_PRV_CULTURE > 14L | FIRST_RECORD) %>% # ~52K isolates
+   group_by(PERSON_ID, ORDER_DAY)                                 # ~48K infections
 astDF %>%
    filter(substr(ORDER_DAY,1,4) %in% as.character(2017:2023)) %>%
-   filter(BLOOD, DAYS_SINCE_PRV_CULTURE > 14L | FIRST_RECORD) %>% # 44,421 isolates
-   group_by(PERSON_ID, ORDER_DAY)                                 # 38,027 infections
+   filter(BLOOD, DAYS_SINCE_PRV_CULTURE > 14L | FIRST_RECORD) %>% # ~42K isolates
+   group_by(PERSON_ID, ORDER_DAY)                                 # ~39K infections
 
 
 
@@ -170,34 +190,81 @@ df %>%
    filter(n > 200L) %>%
    arrange(desc(pcnt3))
 
-# keep only blood cultures
-astDF <- astDF %>% filter(BLOOD)
+
+
+##########################################################################
+# Keep only blood cultures
+df <- astDF %>% 
+   filter(BLOOD) %>%
+   select(PERSON_ID, ORDER_DAY, DAYS_SINCE_PRV_CULTURE) %>%
+   group_by(PERSON_ID) %>%
+   mutate(DAYS_SINCE_LAST_BLOOD_CULT = as.integer(ORDER_DAY - lag(ORDER_DAY))) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   slice_head(n = 1) %>%
+   ungroup() %>% 
+   mutate(ID = 1:nrow(.))
+
+sum(!is.na(df$DAYS_SINCE_PRV_CULTURE)) / nrow(df) # 58% have had any previous culture
+sum(df$DAYS_SINCE_PRV_CULTURE < 180, na.rm=T) / nrow(df)
+sum(df$DAYS_SINCE_PRV_CULTURE < 14, na.rm=T) / nrow(df)
+
+sum(!is.na(df$DAYS_SINCE_LAST_BLOOD_CULT)) / nrow(df) # 31%
+sum(df$DAYS_SINCE_LAST_BLOOD_CULT < 180, na.rm=T) / nrow(df)
+sum(df$DAYS_SINCE_LAST_BLOOD_CULT < 14, na.rm=T) / nrow(df)
+sum(df$DAYS_SINCE_LAST_BLOOD_CULT < 7, na.rm=T) / nrow(df)
+
+hist(df$DAYS_SINCE_LAST_BLOOD_CULT, xlim=c(0,60), 
+     breaks=diff(range(df$DAYS_SINCE_LAST_BLOOD_CULT, na.rm=T)),
+     xlab = 'Days',
+     main = 'Days since last blood culture')
+
+df %>%
+   count(last_culture_exists = is.na(DAYS_SINCE_PRV_CULTURE), 
+         last_culture_blood = is.na(DAYS_SINCE_LAST_BLOOD_CULT)) # ~1/3 each
+
+
+df <- df %>% mutate(across(c(DAYS_SINCE_PRV_CULTURE, DAYS_SINCE_LAST_BLOOD_CULT), ~ ifelse(is.na(.), 1000, .)))
+
+df %>% count(DAYS_SINCE_LAST_BLOOD_CULT >= 14L) # lose ~9,000
+df %>% count(DAYS_SINCE_PRV_CULTURE >= 14L)     # lose ~13,000
+
+df %>% count(recent_any = DAYS_SINCE_PRV_CULTURE <= 14L, 
+             recent_blood = DAYS_SINCE_LAST_BLOOD_CULT <= 14L)
+
+
+# Indicate how many days since last blood culture
+# Indicate if order_day had multiple blood cultures
+df <- astDF %>% # 66,581
+   filter(BLOOD) %>%
+   group_by(PERSON_ID) %>%
+   mutate(DAYS_SINCE_LAST_BLOOD_CULT = as.integer(ORDER_DAY - lag(ORDER_DAY))) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   mutate(DAYS_SINCE_LAST_BLOOD_CULT = first(DAYS_SINCE_LAST_BLOOD_CULT),
+          MULT_BLOOD_ISO = n() > 1L) %>%
+   ungroup() %>%
+   relocate(DAYS_SINCE_LAST_BLOOD_CULT, .after=BLOOD)
+
+df %>% count(DAYS_SINCE_LAST_BLOOD_CULT <= 14L, is.na(DAYS_SINCE_LAST_BLOOD_CULT))
+
+df <- df %>%
+   filter(DAYS_SINCE_LAST_BLOOD_CULT > 14L | is.na(DAYS_SINCE_LAST_BLOOD_CULT)) %>% # ~57K
+   filter(!grepl('Cryptococcus|Aspergillus|Candida', BUG)) # ~56K
+
+
 
 
 # what bugs?
-df <- astDF %>% filter(DAYS_SINCE_PRV_CULTURE > 14L | FIRST_RECORD)
+astDF %>% count(BUG, sort=TRUE)
 df %>% count(BUG, sort=TRUE)
 
+astDF %>% filter(BUG == 'Staphylococcus aureus') %>% count(OXACILLIN, sort=TRUE)
 df %>% filter(BUG == 'Staphylococcus aureus') %>% count(OXACILLIN, sort=TRUE)
+t <- df %>% filter(BUG == 'Enterococcus faecium') %>% select(VANCOMYCIN, AMPICILLIN) %>% table()
+t; fisher.test(t)
 
-df %>% filter(BUG == 'Staphylococcus aureus') %>% filter(is.na(OXACILLIN))
-# 1000005613, 2017-02-11, its there!
+astDF <- df
 
-
-source('~/Desktop/EHR/EHR work/config_file.R')
-x <- tbl(conn, in_schema('AMB_ETL', 'LAB_MICRO_SENS_ALL_VW')) %>%
-   filter(PERSON_ID == '1000005613') %>%
-   collect()
-x %>%
-   select(RESULT_DATE, ORGANISM_NAME, ANITBIOTIC_NAME, SUSCEPTIBILITY_NAME, SENSITIVITY_VALUE, SENSITIVITY_COMMENT) %>% 
-   distinct() %>%
-   filter(grepl('AUREUS', ORGANISM_NAME), ANITBIOTIC_NAME == 'OXACILLIN') %>%
-   mutate(RESULT_DATE = as.Date(RESULT_DATE, format='%m/%d/%Y')) %>%
-   arrange(RESULT_DATE) %>% filter(substr(RESULT_DATE,1,4) == '2017')
-
-load(file = paste0(data_path_name, 'ALL_clean_ASTs.Rdata'))
-
-#
+astDF <- astDF %>% select(-BLOOD)
 
 save(astDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_blood_2015_2023.Rdata')
 

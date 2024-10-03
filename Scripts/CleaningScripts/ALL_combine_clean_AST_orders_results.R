@@ -1,5 +1,5 @@
 ###############################################################
-################# JOIN AST ORDERS AND RESULTS ################# # 3.4 minute run-time
+################# JOIN AST ORDERS AND RESULTS ################# # ~5 minute run-time
 ###############################################################
 start <- Sys.time()
 library(dplyr)
@@ -11,15 +11,6 @@ load(file = paste0(data_path_name, 'AST_results_clean.Rdata')) # 1,789,478
 
 astrDF <- astrDF %>% rename(RESULT_DAY = RESULT_DATE)
 astoDF <- astoDF %>% mutate(RESULT_DAY = as.Date(substr(RESULT_DATE, 1, 10)))
-
-length(astoDF$ORDER_PROC_ID[which(is.na(astoDF$BUG))])
-length(astoDF$ORDER_PROC_ID[which(!is.na(astoDF$BUG))])
-length(astrDF$ORDER_PROC_ID[which(is.na(astrDF$BUG))])
-length(astrDF$ORDER_PROC_ID[which(!is.na(astrDF$BUG))])
-
-length(unique(astrDF$ORDER_PROC_ID[which(is.na(astrDF$BUG))]))
-length(intersect(astrDF$ORDER_PROC_ID[which(is.na(astrDF$BUG))],
-                 astoDF$ORDER_PROC_ID[which(!is.na(astoDF$BUG))])) # 8,257 ! for AST results that are missing BUG, a subset of AST orders have the BUG NAME!
 
 
 # first join on BUG for those orders where bug is present 
@@ -115,7 +106,7 @@ nrow(astDF)
 ###################################################################################
 save(astDF, file = paste0(data_path_name, '/ALL_clean_ASTs.Rdata'))
 ###################################################################################
-print(Sys.time() - start) # 3.4 minutes
+print(Sys.time() - start) # ~5 minutes
 
 
 

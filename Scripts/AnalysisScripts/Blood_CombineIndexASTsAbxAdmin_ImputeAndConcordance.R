@@ -10,205 +10,59 @@ load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata
 
 
 
-
-################################################################################
-########################### START COMBINE AST + ABX ############################
-################################################################################
-start <- Sys.time()
-library(dplyr)
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'ASTs_blood_2015_2023.Rdata'))
-load(file = paste0(data_path_name, 'ALL_CLEANED_2017_2023_AbxAdmin.Rdata'))
-astDF <- astDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2017:2023)) #    55,959 -->    43,787
-abxDF <- abxDF %>% filter(PERSON_ID %in% unique(astDF$PERSON_ID))                # 9,681,748 --> 2,588,330
-length(unique(astDF$PERSON_ID)) # 35,666
-length(unique(abxDF$PERSON_ID)) # 33,638
-length(intersect(astDF$PERSON_ID, abxDF$PERSON_ID)) # 33,638
-# prep data
-abxDF <- abxDF %>%
-   mutate(PERSON_ID = as.character(PERSON_ID)) %>%
-   rename(START_DATE = ADMIN_START_DATE,
-          END_DATE = ADMIN_END_DATE) %>%
-   arrange(PERSON_ID, START_DATE)
-astDF <- astDF %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   mutate(MULT_BLOOD_ISO = n() > 1L) %>%
-   ungroup() %>%
-   relocate(MULT_BLOOD_ISO, .before=BUG) %>%
-   mutate(ORDER_DAY = as.Date(substr(ORDER_DATE,1,10)),
-          RESULT_DAY = as.Date(substr(RESULT_DATE,1,10))) %>%
-   mutate(CONTAM = case_when(
-      NEXT_RESULT_DAY <= RESULT_DAY ~ 2,
-      NEXT_ORDER_DAY < RESULT_DAY ~ 1
-   )) %>%
-   select(-NEXT_ORDER_DAY, -NEXT_RESULT_DAY) %>%
-   relocate(RESULT_DAY, .after=ORDER_DAY) %>%
-   relocate(ORDER_DATE, RESULT_DATE, .before=ORDER_DAY) %>%
-   relocate(BUG, .after=CONTAM)
-
-nrow(astDF) # 43,787
-astDF %>% count(MULT_BLOOD_ISO) # 10,825
-astDF %>% group_by(PERSON_ID, ORDER_DAY) # 37,976
-
-## DIFFERENCES BETWEEN ORDER_TIMES for multiple isolates
-{
-   # d <- astDF %>%
-   #    group_by(PERSON_ID, ORDER_DAY) %>%
-   #    filter(n() > 1L) %>%
-   #    filter(length(unique(ORDER_DATE)) > 1) %>%
-   #    mutate(D = as.numeric(diff(range(ORDER_DATE))) / 60) %>%
-   #    ungroup() %>%
-   #    select(D) %>%
-   #    unlist()
-   # d <- unname(d)
-   # hist(d)
-   # rm(d)
-   # 
-   # astDF1 <- astDF %>%
-   #    summarise(ORDER_DATE = min(ORDER_DATE),
-   #              RESULT_DATE = min(RESULT_DATE),
-   #              RESULT_DAY = min(RESULT_DAY),
-   #              BUG = list(sort(unique(BUG))),
-   #              .by = c(PERSON_ID, ORDER_DAY))
-   # barplot(table(lengths(astDF1$BUG)), main='Number of pathogens isolated')
-   # 
-   # astDF2 <- astDF %>%
-   #    group_by(PERSON_ID, ORDER_DAY) %>%
-   #    slice_min(RESULT_DATE, with_ties = FALSE) %>%
-   #    ungroup()
-   # 
-   # sapply(names(astDF1), function(x) all(astDF1[[x]] == astDF2[[x]]))
-   # w <- which(astDF1$ORDER_DATE != astDF2$ORDER_DATE)
-   # # table(astDF1$NEXT_ORDER_DAY != astDF2$NEXT_ORDER_DAY)
-   # # table(astDF1$NEXT_RESULT_DAY != astDF2$NEXT_RESULT_DAY)
-   # length(w) # 468 (out of 37,983)
-   # # how often is the min(ORDER_DATE) earlier than the one that we get when choosing the min(RESULT_DATE)
-   # # answer: EVERY SINGLE TIME
-   # table(astDF1$ORDER_DATE[w] < astDF2$ORDER_DATE[w])
-   # rm(astDF2, w)
-}
-
-# JOIN
-empDF <- astDF %>%
-   mutate(JOIN_START = ORDER_DAY - 30,
-          JOIN_END = RESULT_DAY + 90) %>%
-   left_join(x = .,
-             y = abxDF,
-             by = join_by(PERSON_ID,
-                          JOIN_START <= START_DATE,
-                          JOIN_END >= START_DATE)) %>%
-   select(-JOIN_START, -JOIN_END) %>%
-   relocate(ABX, START_DATE, END_DATE, .before=BUG)
-# save long format
-save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_LONG.Rdata'))
-
-# collapse so one row per isolate
-empDF <- empDF %>% 
-   select(-BLOOD) %>% 
-   mutate(START_DAY = as.Date(substr(START_DATE,1,10))) %>%
-   distinct() %>%
-   relocate(CONTAM, ABX, START_DATE, END_DATE, BUG, START_DAY, .before=CEFEPIME) %>%
-   group_by_all() %>% ungroup(ABX, START_DATE, END_DATE, START_DAY) %>%
-   reframe(DATE_OF_MOST_RECENT_ABX = max(START_DAY[START_DAY < ORDER_DAY]),
-           EMPIRIC0 = list(sort(unique(ABX[START_DAY == ORDER_DAY]))),
-           EMPIRIC1 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+1)]))),
-           EMPIRIC2 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+2) & START_DAY < RESULT_DAY]))),
-           EMPIRIC3 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+3) & START_DAY < RESULT_DAY]))),
-           EMPIRIC4 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+4) & START_DAY < RESULT_DAY]))),
-           EMPIRIC5 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+5) & START_DAY < RESULT_DAY]))),
-           EMPIRIC6 = list(sort(unique(ABX[START_DAY == (ORDER_DAY+6) & START_DAY < RESULT_DAY]))),
-           EMPIRICR = list(sort(unique(ABX[START_DAY > (ORDER_DAY+6) & START_DAY < RESULT_DAY]))),
-           TARGETED = list(sort(unique(ABX[START_DAY == RESULT_DAY | START_DAY == RESULT_DAY + 1])))) %>%
-   ungroup() %>%
-   mutate(DELAY = as.integer(RESULT_DAY - ORDER_DAY)) %>%
-   relocate(DELAY, DATE_OF_MOST_RECENT_ABX, EMPIRIC0, EMPIRIC1, EMPIRIC2, EMPIRIC3, EMPIRIC4, EMPIRIC5, EMPIRIC6, EMPIRICR, TARGETED, .before=BUG)
-empDF$DATE_OF_MOST_RECENT_ABX[is.infinite(empDF$DATE_OF_MOST_RECENT_ABX)] <- NA
-empDF$DAYS_SINCE_MOST_RECENT_ABX <- as.integer(empDF$ORDER_DAY - empDF$DATE_OF_MOST_RECENT_ABX)
-empDF <- empDF %>% select(-DATE_OF_MOST_RECENT_ABX)
-empDF <- empDF %>% relocate(DAYS_SINCE_MOST_RECENT_ABX, .before=EMPIRIC0)
-
-# antibiotic abbreviations
-abbr <- tibble(read.table(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/ABX_ABBR.txt', header = TRUE)) %>% 
-   select(-Class) %>%
-   mutate(Antibiotic_Name = gsub('-', '/', Antibiotic_Name),
-          Antibiotic_Name = gsub('_', ' ', Antibiotic_Name),
-          Antibiotic_Name = toupper(Antibiotic_Name))
-abbr <- setNames(abbr$Abbreviation, abbr$Antibiotic_Name)
-abad <- unique(unlist(empDF %>% select(EMPIRIC0:TARGETED)))
-abad <- abad[!abad %in% names(abbr)]
-abbr <- c(abbr, setNames(abad, abad))
-rm(abad)
-save(abbr, file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
-
-empDF$EMP0_ABBR <- sapply(empDF$EMPIRIC0, function(x) paste(sort(abbr[x]), collapse='+'))
-empDF$TARG_ABBR <- sapply(empDF$TARGETED, function(x) paste(sort(abbr[x]), collapse='+'))
-empDF <- empDF %>% relocate(EMP0_ABBR, TARG_ABBR, .before=EMPIRIC0)
-
-# save wide format
-save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
-print(Sys.time() - start) # < 2 minutes
-
-rm(abxDF, astDF, start, abbr, empDF)
-gc()
-################################################################################
-############################ END COMBINE AST + ABX #############################
-################################################################################
-
-
-
-
-
-
 ################################################################################
 ############################### START IMPUTATION ###############################
 ################################################################################
 start <- Sys.time()
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
+#load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
+load(file = paste0(data_path_name, 'ASTs_blood_2015_2023.Rdata'))
+astDF <- astDF %>% filter(substr(ORDER_DATE, 1, 4) %in% as.character(2017:2023))
 Viridans <- c("Viridans Streptococci", "Alpha Hemolytic Streptococci", "Streptococcus mitis", "Streptococcus mutans", "Streptococcus sanguinis", "Streptococcus mitis/oralis group", "Streptococcus salivarius")
 BetaHemolytic <- c("Beta Hemolytic Streptococci", "Group A Streptococci", "Group B Streptococci", "Group C Streptococci", "Group G Streptococci", "Streptococcus dysgalactiae", "Streptococcus pyogenes", 
                    "Streptococcus agalactiae", "Streptococcus equi", "Streptococcus gallolyticus", "Streptococcus bovis", "Streptococcus equinis", "Streptococcus suis")
 
 # KADRI imputation rules
-empCOPY <- empDF
+astCOPY <- astDF
+w_first_abx_col <- which(names(astDF) == 'CEFEPIME')
 {
    source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesClean.R')
-   abx_names <- names(empDF)[16:length(empDF)]
+   abx_names <- names(astDF)[w_first_abx_col:length(astDF)]
    imp_rules$Antibiotic[!unique(imp_rules$Antibiotic) %in% abx_names] # CEFADROXIL, CEFPODOXIME, CEPHALEXIN, DICLOXACILLIN, NAFCILLIN
    abx_names[!abx_names %in% imp_rules$Antibiotic] # lots
    rm(abx_names)
    
-   # find which rows of empDF correspond to which bugs
+   # find which rows of astDF correspond to which bugs
    bug_rows <- setNames(vector('list', length(imp_rules) - 1), names(imp_rules)[-1])
    for (i in seq_along(bug_rows)) {
       print(i)
       bug_name <- names(bug_rows)[i]
       if (grepl('Beta hemolytic', bug_name)) {
-         bug_rows[[i]] <- which(empDF$BUG %in% BetaHemolytic)
+         bug_rows[[i]] <- which(astDF$BUG %in% BetaHemolytic)
          next
       }
       
       if (grepl('Alpha hemolytic|viridans', bug_name)) {
-         bug_rows[[i]] <- which(empDF$BUG %in% Viridans)
+         bug_rows[[i]] <- which(astDF$BUG %in% Viridans)
          next
       }
       
       if (grepl('staphylococcus aureus', bug_name)) {
-         w_sa <- grep('Staphylococcus aureus', empDF$BUG)
-         if (grepl('sensitive', bug_name)) bug_rows[[i]] <- w_sa[which(empDF$OXACILLIN[w_sa] == 0)]
-         if (grepl('resistant', bug_name)) bug_rows[[i]] <- w_sa[which(empDF$OXACILLIN[w_sa] == 1)]
+         w_sa <- grep('Staphylococcus aureus', astDF$BUG)
+         if (grepl('sensitive', bug_name)) bug_rows[[i]] <- w_sa[which(astDF$OXACILLIN[w_sa] == 0)]
+         if (grepl('resistant', bug_name)) bug_rows[[i]] <- w_sa[which(astDF$OXACILLIN[w_sa] == 1)]
          next
       }
       
-      bug_rows[[i]] <- grep(bug_name, empDF$BUG)
+      bug_rows[[i]] <- grep(bug_name, astDF$BUG)
    }
    lengths(bug_rows)
-   sum(lengths(bug_rows)) / nrow(empDF) # 66.8%
+   sum(lengths(bug_rows)) / nrow(astDF) # 66.8%
    u_bug_rows <- sort(unlist(bug_rows))
    names(u_bug_rows) <- NULL
    any(diff(u_bug_rows) == 0) # no overlap!
-   head(sort(table(empDF$BUG[-u_bug_rows]), decreasing = TRUE), n=12) # frequent bugs for which we don't have imputation rules
+   head(sort(table(astDF$BUG[-u_bug_rows]), decreasing = TRUE), n=12) # frequent bugs for which we don't have imputation rules
    rm(u_bug_rows, i, bug_name, w_sa)
    
    #input: a value from imp_rules and an ast row number
@@ -221,9 +75,9 @@ empCOPY <- empDF
       if (grepl("^E", val)) {
          rest <- gsub("^(E )([A-Z/]+)(; )(.+)", "\\4", val)                  #stores everything after semicolon
          abx <- toupper(gsub("^(E )([A-Z/]+)(;.+)", "\\2", val))             #extracts abx name
-         col <- which(colnames(empDF) == abx)                                          #empDF BC empCOPY VALS COULD ALREADY BE CHANGED?
+         col <- which(colnames(astDF) == abx)                                          #astDF BC astCOPY VALS COULD ALREADY BE CHANGED?
          if (length(col) == 0) return(op(rest, r))                     #if abx name doesn't match, run op on rest of imp_rules val
-         newval <- empDF[[col]][r]                                                     #empDF BC empCOPY VALS COULD ALREADY BE CHANGED?
+         newval <- astDF[[col]][r]                                                     #astDF BC astCOPY VALS COULD ALREADY BE CHANGED?
          if (is.na(newval)) return(op(rest, r))                                        #if abx not tested, run op on rest of imp_rules val
          return(newval)                                             #output: abx val if 1 or 0
       }
@@ -232,9 +86,9 @@ empCOPY <- empDF
       if (grepl("^S IF", val)) {
          rest <- gsub("^(S IF )([A-Z/]+)(; )(.+)", "\\4", val)
          abx <- toupper(gsub("^(S IF )([A-Z/]+)(;.+)", "\\2", val))
-         col <- which(colnames(empDF) == abx)
+         col <- which(colnames(astDF) == abx)
          if (length(col) == 0) return(op(rest, r))                     #if abx name doesn't match, run op on rest of imp_rules val
-         newval <- empDF[[col]][r]
+         newval <- astDF[[col]][r]
          if (is.na(newval) | newval == 1) { 
             return(op(rest, r))                                        #if abx test score is missing or 1, run op on rest of imp_rules val
          } else {
@@ -259,19 +113,19 @@ empCOPY <- empDF
          val <- imp_rules[[b]][a]
          if (val == "NA") next                                # checking if val is "straightforward" (NA)
          
-         cl <- which(colnames(empCOPY) == abx)   # find drug col in ast 
+         cl <- which(colnames(astCOPY) == abx)   # find drug col in ast 
          if (length(cl) == 0) next                            # if drug not found, move on
          
-         w <- rws[which(is.na(empCOPY[[cl]][rws]))]  # find which rows of rws (this bug) are missing
+         w <- rws[which(is.na(astCOPY[[cl]][rws]))]  # find which rows of rws (this bug) are missing
          if (length(w) == 0) next                    # if no AST results are missing, move on
          
          if (val == 'S' | val == 'R') {                       # checking if val is "straightforward" (0 or 1)
-            empCOPY[[cl]][w] <- ifelse(val == 'S', 0L, 1L)
+            astCOPY[[cl]][w] <- ifelse(val == 'S', 0L, 1L)
             next
          }
          
          for (r in w) { #rows that pertain to bug in ast    # if val is not "straightforward", need to go row by row for relevant bugs in ast
-            empCOPY[r, cl] <- op(val, r)                      # run value and ast row nums through op function
+            astCOPY[r, cl] <- op(val, r)                      # run value and ast row nums through op function
          }
       }
    }
@@ -279,11 +133,11 @@ empCOPY <- empDF
    rm(a, abx, b, cl, r, rws, val, w, op, imp_rules, bug_rows)
    
    # check for errors
-   which(sapply(empCOPY[16:length(empCOPY)], function(x) 4 %in% x))
+   which(sapply(astCOPY[w_first_abx_col:length(astCOPY)], function(x) 4 %in% x))
 }
 
 # EUCAST expected phenotypes
-empTEST <- empCOPY
+astTEST <- astCOPY
 {
    path <- '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/'
    R1 <- readxl::read_xlsx(paste0(path, 'Table1_exp_res.xlsx'))
@@ -335,11 +189,11 @@ empTEST <- empCOPY
    rs$ORGANISMS <- sub("Group \\[ABCG] Beta-Hemolytic Streptococci", "Group \\[ABCG] Streptococci", rs$ORGANISMS)
    
    
-   bug_rows <- sapply(rs$ORGANISMS, function(x) grep(x, empTEST$BUG))
+   bug_rows <- sapply(rs$ORGANISMS, function(x) grep(x, astTEST$BUG))
    sort(lengths(bug_rows))
-   sum(lengths(bug_rows)) / nrow(empDF) # 70%
+   sum(lengths(bug_rows)) / nrow(astDF) # 70%
    u_bug_rows <- sort(unlist(bug_rows))
-   head(sort(table(empDF$BUG[-u_bug_rows]), decreasing = TRUE), n=12) # frequent bugs for which we don't have imputation rules
+   head(sort(table(astDF$BUG[-u_bug_rows]), decreasing = TRUE), n=12) # frequent bugs for which we don't have imputation rules
    rm(u_bug_rows)
    
    
@@ -347,7 +201,7 @@ empTEST <- empCOPY
    for (b in 1:nrow(rs)){ #bug by bug
       rws <- bug_rows[[rs$ORGANISMS[b]]]
       for (a in 2:ncol(rs)){ #abx by abx
-         cl <- which(colnames(rs)[a] == colnames(empTEST)) #find drug col in empTEST 
+         cl <- which(colnames(rs)[a] == colnames(astTEST)) #find drug col in astTEST 
          
          if(length(cl) == 0) next                      #if drug not found, move on
          
@@ -355,12 +209,12 @@ empTEST <- empCOPY
          if(is.na(val)) next                           # if rs value is NA, next
          
          if(val == "R"){ 
-            empTEST[rws, cl][is.na(empTEST[rws, cl])] <- 1  # if rs value is R, replace NAs with 1
+            astTEST[rws, cl][is.na(astTEST[rws, cl])] <- 1  # if rs value is R, replace NAs with 1
             next
          }
          
          if(val == "S"){
-            empTEST[rws, cl][is.na(empTEST[rws, cl])] <- 0  # if rs value is S, replace NAs with 0
+            astTEST[rws, cl][is.na(astTEST[rws, cl])] <- 0  # if rs value is S, replace NAs with 0
             next
          }
       }
@@ -371,13 +225,13 @@ empTEST <- empCOPY
 }
 
 # EUCAST expert rules
-empTEST2 <- empTEST
+astTEST2 <- astTEST
 {
    StaphRules <- read.table(file = paste0(path, 'EUCAST Expert Rules v 3.2 - Staph Rules Condensed.tsv'), sep = "\t")
    names(StaphRules) <- toupper(StaphRules[1,])
    StaphRules <- StaphRules[-1,]
    rownames(StaphRules) <- NULL
-   StaphRules[1, 4] <- "R if benzylpenicillin; NA" # temporary
+   StaphRules[1, 4] <- "R if benzylpenicillin; NA" # tastorary
    
    StrepRules <- read.table(file = paste0(path, 'EUCAST Expert Rules v 3.2 - Strep Rules Condensed.tsv'), sep = "\t")
    names(StrepRules) <- toupper(StrepRules[1,])
@@ -418,7 +272,7 @@ empTEST2 <- empTEST
       if(char == "CEPHALOSPORINS AND CARBAPENEMS") return(CEPCAR)
       if(char == "AMINOPENICILLINS") return(AMINOPENICILLINS)
       
-      if(char == "Staphylococcus") return(grep("Staph", unique(empDF$BUG), value = T))
+      if(char == "Staphylococcus") return(grep("Staph", unique(astDF$BUG), value = T))
       if(char == "Viridans group streptococci") return(Viridans)
       if(char == "Beta-Hemolytic streptococci") return(BetaHemolytic)
       
@@ -431,9 +285,9 @@ empTEST2 <- empTEST
       if(grepl("^E", val)){                                          #E indicates that the ast score of the named antibiotic should be the output, unless that score is also missing (NA)
          rest <- gsub("^(E )([a-z]+-?[a-z]+)(; )(.+)", "\\4", val)                  #stores everything after semicolon
          abx <- toupper(gsub("^(E )([a-z]+-?[a-z]+)(;.+)", "\\2", val))             #extracts abx name
-         col <- colnames(empTEST)[colnames(empTEST) %in% abx]                                          
+         col <- colnames(astTEST)[colnames(astTEST) %in% abx]                                          
          if(length(col) == 0) return(op(rest, r))                     #if abx name doesn't match, run op on rest
-         newval <- empTEST[[col]][r]                                                     
+         newval <- astTEST[[col]][r]                                                     
          if(is.na(newval)){
             return(op(rest, r))                                        #if abx not tested, run op on rest
          }else{
@@ -443,9 +297,9 @@ empTEST2 <- empTEST
       if(grepl("^R if", val)){                                       #R if indicates that the ast score of the named antibiotic should be the output only if the score is 1
          rest <- gsub("^(R if )([a-z]+-?[a-z]+)(; )(.+)", "\\4", val)
          abx <- toupper(gsub("^(R if )([a-z]+-?[a-z]+)(;.+)", "\\2", val))
-         col <- which(colnames(empTEST) %in% abx)
+         col <- which(colnames(astTEST) %in% abx)
          if(length(col) == 0) return(op(rest, r))                     
-         newval <- empTEST[[col]][r]
+         newval <- astTEST[[col]][r]
          if(is.na(newval) | newval == 0){ 
             return(op(rest, r))                                       
          }else{
@@ -455,9 +309,9 @@ empTEST2 <- empTEST
       if(grepl("^S if", val)){                                       #S if indicates that the ast score of the named antibiotic should be the output only if the score is 0
          rest <- gsub("^(S if )([a-z]+-?[a-z]+)(; )(.+)", "\\4", val)
          abx <- toupper(gsub("^(S if )([a-z]+-?[a-z]+)(;.+)", "\\2", val))
-         col <- which(colnames(empTEST) %in% abx)
+         col <- which(colnames(astTEST) %in% abx)
          if(length(col) == 0) return(op(rest, r))                     
-         newval <- empTEST[[col]][r]
+         newval <- astTEST[[col]][r]
          if(is.na(newval) | newval == 1){ 
             return(op(rest, r))                                        
          }else{
@@ -468,10 +322,10 @@ empTEST2 <- empTEST
          rest <- gsub("^(A S if )([a-z]+-?[a-z]+ AND [a-z]+-?[a-z]+)(; )(.+)", "\\4", val)
          abx1 <- toupper(gsub("^(A S if )([a-z]+-?[a-z]+)( AND )([a-z]+-?[a-z]+)(;.+)", "\\2", val))
          abx2 <- toupper(gsub("^(A S if )([a-z]+-?[a-z]+)( AND )([a-z]+-?[a-z]+)(;.+)", "\\4", val))
-         col <- which(colnames(empTEST) %in% c(abx1, abx2))
+         col <- which(colnames(astTEST) %in% c(abx1, abx2))
          if(length(col) == 0) return(op(rest, r))                     
-         newval1 <- empTEST[[col[1]]][r]
-         newval2 <- empTEST[[col[2]]][r]
+         newval1 <- astTEST[[col[1]]][r]
+         newval2 <- astTEST[[col[2]]][r]
          if(any(is.na(c(newval1, newval2))) | any(c(newval1 == 1, newval2 == 1))){ 
             return(op(rest, r))                                        
          }else{
@@ -482,25 +336,25 @@ empTEST2 <- empTEST
       4                                                              #output: 4 if no case matches - shouldn't happen(?)
    }
    
-   bug_rows <- sapply(rules$BUG, function(x) grep(x, empTEST2$BUG))
+   bug_rows <- sapply(rules$BUG, function(x) grep(x, astTEST2$BUG))
    lengths(bug_rows)
    
    #start <- Sys.time()
    for (b in 1:nrow(rules)) { #bug/species by bug/species in rules
       cat(b, rules$BUG[b], '\n')
       for (a in 2:ncol(rules)){ #drug by drug in rules
-         cl <- which(colnames(empTEST2) %in% n(names(rules[a]))) #find drug col in ast ... searches col name in function n to see if larger category
+         cl <- which(colnames(astTEST2) %in% n(names(rules[a]))) #find drug col in ast ... searches col name in function n to see if larger category
          if(length(cl) == 0) next                               #if drug(s) not found, move on
          val <- rules[[a]][b]
          if(is.na(val)) next
          rws <- bug_rows[[rules$BUG[b]]]         #ast rows related to bug/species ... searches bug name in function n to see if larger category
          # if(val == "0" || val == "1"){                                     # left from old version, useful if want to combine versions later
-         #    empTEST2[rws, cl][is.na(empTEST2[rws, cl])] <- as.integer(val)
+         #    astTEST2[rws, cl][is.na(astTEST2[rws, cl])] <- as.integer(val)
          #    next
          # }
          for(r in rws){ #rows that pertain to bug in ast  # row by row for relevant bugs in ast
             # cat(a, r, '\n')
-            empTEST2[r, cl[is.na(empTEST2[r, cl])]] <- op(val, r)     #run value and ast row nums through op function
+            astTEST2[r, cl[is.na(astTEST2[r, cl])]] <- op(val, r)     #run value and ast row nums through op function
          }
       }
    }
@@ -510,19 +364,223 @@ empTEST2 <- empTEST
 }
 
 # check the difference between unimputed and imputed
-df <- data.frame(old = sapply(empDF,    function(x) sum(!is.na(x))), new = sapply(empCOPY, function(x) sum(!is.na(x))))
+df <- data.frame(old = sapply(astDF,    function(x) sum(!is.na(x))), new = sapply(astTEST2, function(x) sum(!is.na(x))))
 df$diff <- df$new - df$old
 df <- df[order(df$diff, decreasing=TRUE), ]
 
-empDF <- empTEST2
-save(empDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed.Rdata')
-print(Sys.time() - start) # < 4 minutes
+astDF <- astTEST2
 
-rm(empCOPY, empTEST, empTEST2, df, Viridans, BetaHemolytic, start, empDF)
-gc()
+# prep list columns containing R, S, and Not-tested for later
+# I will use these list cols to determine if each individual therapy was concordant/discordant/not tested
+astDF$RESISTANT <- astDF$SUSCEPTIBLE <- vector('list', nrow(astDF))
+astDF <- astDF %>% relocate(RESISTANT, SUSCEPTIBLE, .before=CEFEPIME)
+abx_cols <- which(names(astDF) == 'CEFEPIME'):which(names(astDF) == 'DELAFLOXACIN')
+abx_names <- colnames(astDF)[abx_cols]
+start <- Sys.time()
+for (i in seq_len(nrow(astDF))) {
+   if (i %% 500 == 0) print(i)
+   astDF$RESISTANT[i] <- list(sort(unique(abx_names[astDF[i, abx_cols] == 1])))
+   astDF$SUSCEPTIBLE[i] <- list(sort(unique(abx_names[astDF[i, abx_cols] == 0])))
+}
+print(Sys.time() - start) # ~5.3 minutes
+rm(abx_cols, abx_names, i)
+
+
+save(astDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_blood_2017_2023_imputed.Rdata')
+#save(astDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed.Rdata')
+print(Sys.time() - start) # ~3 minutes
 ################################################################################
 ################################ END IMPUTATION ################################
 ################################################################################
+
+
+
+
+
+
+
+################################################################################
+########################### START COMBINE AST + ABX ############################
+################################################################################
+start <- Sys.time()
+library(dplyr)
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+#load(file = paste0(data_path_name, 'ASTs_blood_2015_2023.Rdata')) # 55,556
+load(file = paste0(data_path_name, 'ASTs_blood_2017_2023_imputed.Rdata'))   #    44,768
+load(file = paste0(data_path_name, 'ALL_CLEANED_2017_2023_AbxAdmin.Rdata')) # 9,681,748
+abxDF <- abxDF %>% filter(PERSON_ID %in% unique(astDF$PERSON_ID))           # 3,030,936
+length(unique(astDF$PERSON_ID)) # 33,972
+length(unique(abxDF$PERSON_ID)) # 32,429
+length(intersect(astDF$PERSON_ID, abxDF$PERSON_ID)) # 32,429
+
+# prep data
+abxDF <- abxDF %>%
+   mutate(PERSON_ID = as.character(PERSON_ID)) %>%
+   rename(START_DATE = ADMIN_START_DATE,
+          END_DATE = ADMIN_END_DATE) %>%
+   arrange(PERSON_ID, START_DATE)
+
+astDF %>% count(MULT_BLOOD_ISO) # 7,091
+astDF %>% group_by(PERSON_ID, ORDER_DAY) # 40,951
+
+
+
+# JOIN abx_admin + ASTs
+empDF <- astDF %>% # 1,327,723
+   mutate(JOIN_START = ORDER_DAY - 7,
+          JOIN_END = RESULT_DAY + 14) %>%
+   left_join(x = .,
+             y = abxDF,
+             by = join_by(PERSON_ID,
+                          JOIN_START <= START_DATE,
+                          JOIN_END >= START_DATE)) %>%
+   select(-JOIN_START, -JOIN_END) %>%
+   relocate(ABX, START_DATE, END_DATE, .before=BUG)
+
+### ASSESS CONCORDANCE ###
+# test
+chunks <- mapply(FUN = ':',
+                 seq(1, 1300001, 100000),
+                 c(seq(100000, 1300000, 100000), nrow(empDF)))
+
+START <- Sys.time()
+for (c in seq_along(chunks)) {
+   print(c)
+   chunk <- chunks[[c]]
+   df <- empDF[chunk,] %>% select(ABX, RESISTANT, SUSCEPTIBLE)
+   df$FLAG <- NA
+   w <- which(is.na(df$ABX))
+   df$FLAG[w] <- 'No therapy given'
+   
+   start <- Sys.time()
+   for (i in seq_len(nrow(df))[-w]) {
+      abx <- df$ABX[i]
+      if (any(df$SUSCEPTIBLE[[i]] == abx)) {
+         df$FLAG[i] <- 'CONCORDANT'
+      } else if (any(df$RESISTANT[[i]] == abx)) {
+         df$FLAG[i] <- 'DISCORDANT'
+      } else {
+         df$FLAG[i] <- 'NOTTESTED'
+      }
+   }
+   total <- Sys.time() - start
+   print(total) # ~30 seconds
+   
+   empDF$FLAG[chunk] <- df$FLAG
+}
+print(Sys.time() - START) # ~7 minutes
+rm(START, start, i, c, abx, df, chunk, chunks, total, w) 
+
+
+# save long format
+save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_imputed_flagged_LONG.Rdata'))
+
+
+# antibiotic abbreviations
+abbr <- tibble(read.table(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/ABX_ABBR.txt', header = TRUE)) %>% 
+   select(-Class) %>%
+   mutate(Antibiotic_Name = gsub('-', '/', Antibiotic_Name),
+          Antibiotic_Name = gsub('_', ' ', Antibiotic_Name),
+          Antibiotic_Name = toupper(Antibiotic_Name))
+abbr <- setNames(abbr$Abbreviation, abbr$Antibiotic_Name)
+abad <- unique(empDF$ABX)
+abad <- abad[!abad %in% names(abbr)]
+abad <- abad[!is.na(abad)]
+abad <- abad[-grep(',', abad)]
+abbr <- c(abbr, setNames(abad, abad))
+rm(abad)
+save(abbr, file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
+rm(abbr)
+
+
+if (FALSE) {
+   library(dplyr)
+   load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
+   load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_imputed_flagged_LONG.Rdata'))
+}
+# collapse so one row per isolate
+chours <- 3600
+empDF <- empDF %>%
+   mutate(ABX_PROX_ORDER = as.numeric(lubridate::as.duration(START_DATE - ORDER_DATE)) / 3600,
+          pEMPIRIC = START_DATE < (ORDER_DATE - 48*chours),
+          EMPIRIC = START_DATE >= (ORDER_DATE - 48*chours) & START_DATE < (ORDER_DATE + 12*chours),
+          BETWEEN = START_DATE >= (ORDER_DATE + 12*chours) & START_DATE < RESULT_DATE,
+          TARGETED = START_DATE >= RESULT_DATE & START_DATE <= (RESULT_DATE + 72*chours),
+          lTARGETED = START_DATE > (RESULT_DATE + 72*chours)) %>%
+   group_by_all() %>% 
+   ungroup(ABX, START_DATE, END_DATE, pEMPIRIC, EMPIRIC, BETWEEN, TARGETED, lTARGETED, FLAG, ABX_PROX_ORDER) %>%
+   reframe(TIME_TO_FIRST_ABX = min(ABX_PROX_ORDER),
+           TIME_TO_CONC = list(ABX_PROX_ORDER[FLAG == 'CONCORDANT']),
+           ABX_EMPp = list(sort(unique(ABX[pEMPIRIC]))),
+           ABX_EMP = list(sort(unique(ABX[EMPIRIC]))),
+           ABX_BTW = list(sort(unique(ABX[BETWEEN]))),
+           ABX_TAR = list(sort(unique(ABX[TARGETED]))),
+           ABX_TARl = list(sort(unique(ABX[lTARGETED]))),
+           FLAGp = paste(sort(unique(FLAG[pEMPIRIC])), collapse='+'),
+           FLAGe = paste(sort(unique(FLAG[EMPIRIC])), collapse='+'),
+           FLAGb = paste(sort(unique(FLAG[BETWEEN])), collapse='+'),
+           FLAGt = paste(sort(unique(FLAG[TARGETED])), collapse='+'),
+           FLAGl = paste(sort(unique(FLAG[lTARGETED])), collapse='+')) %>%
+   ungroup() %>%
+   relocate(ABX_EMPp:ABX_TARl, FLAGp:FLAGl, TIME_TO_FIRST_ABX, TIME_TO_CONC, .before=BUG)
+
+
+plot(NA, xlim=c(-168, 432), ylim=c(1,1000))
+for (i in 1:1000) {
+   conc_times <- empDF$TIME_TO_CONC[[i]]
+   if (length(conc_times) == 0) next
+   points(x=conc_times, y=rep(i, length(conc_times)), pch=15, cex=0.25)
+}
+rm(i, conc_times)
+
+# each row should have a 'TIME_TO_FIRST_CONCORDANT_THERAPY' column
+# calculate the time to first concordant therapy, 
+# only if it occurred > -48 hours before AST order
+time_to_conc <- numeric(nrow(empDF))
+w <- which(lengths(empDF$TIME_TO_CONC) == 0L)
+time_to_conc[w] <- NA
+for (i in seq_len(nrow(empDF))[-w]) {
+   t <- empDF$TIME_TO_CONC[[i]]
+   
+   # only received concordant therapy pre-empirically, don't count this!
+   if (all(t < -48)) {
+      time_to_conc[i] <- NA
+      next
+   }
+   
+   # take only the times >= -48 hours
+   time_to_conc[i] <- min(t[t >= -48])
+}
+
+empDF$TIME_TO_CONC <- sapply(empDF$TIME_TO_CONC, function(x) {
+   if (any(x < -24)) return(-24)
+   return(min(x))
+})
+empDF$TIME_TO_CONC[is.infinite(empDF$TIME_TO_CONC)] <- NA
+
+empDF <- empDF %>%
+   mutate(across(.cols = c(FLAGp:FLAGl),
+                 .fns = ~ case_when(
+                    . == '' ~ 'No abx given',
+                    . == 'CONCORDANT+DISCORDANT' ~ 'CONCORDANT',
+                    . == 'CONCORDANT+DISCORDANT+NOTTESTED' ~ 'CONCORDANT',
+                    . == 'CONCORDANT+NOTTESTED' ~ 'CONCORDANT',
+                    . == 'DISCORDANT+NOTTESTED' ~ 'DISCORDANT',
+                    .default = .
+                 )))
+
+# save wide format
+save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_imputed_flagged_WIDE.Rdata'))
+print(Sys.time() - start) # < 2 minutes
+
+rm(abxDF, astDF, start, abbr, empDF)
+gc()
+################################################################################
+############################ END COMBINE AST + ABX #############################
+################################################################################
+
+
+
 
 
 
@@ -538,45 +596,33 @@ load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata
 load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata')); empDFo <- empDF
 load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_imputed.Rdata'))
 
-empDF$FLAG0  <- empDF$FLAG1  <- empDF$FLAG2  <- empDF$FLAG3  <- empDF$FLAG4  <- empDF$FLAG5  <- empDF$FLAG6  <- empDF$FLAGR  <- empDF$FLAGT  <- NA
-empDFo$FLAG0 <- empDFo$FLAG1 <- empDFo$FLAG2 <- empDFo$FLAG3 <- empDFo$FLAG4 <- empDFo$FLAG5 <- empDFo$FLAG6 <- empDFo$FLAGR <- empDFo$FLAGT <- NA
-empDF <- empDF %>% relocate(FLAG0, FLAG1, FLAG2, FLAG3, FLAG4, FLAG5, FLAG6, FLAGR, FLAGT, .before=EMPIRIC0)
-empDF <- empDF %>% relocate(FLAG0, FLAG1, FLAG2, FLAG3, FLAG4, FLAG5, FLAG6, FLAGR, FLAGT, .before=EMPIRIC0)
+empDF$FLAGp  <- empDF$FLAGe  <- empDF$FLAGb  <- empDF$FLAGt  <- empDF$FLAGl  <- NA
+empDFo$FLAGp <- empDFo$FLAGe <- empDFo$FLAGb <- empDFo$FLAGt <- empDFo$FLAGl <- NA
+empDF <- empDF %>% relocate(FLAGp, FLAGe, FLAGb, FLAGt, FLAGl, .before=EMPIRIC)
+empDF <- empDF %>% relocate(FLAGp, FLAGe, FLAGb, FLAGt, FLAGl, .before=EMPIRIC)
 col_names <- names(empDF %>% select(CEFEPIME:DELAFLOXACIN))
-emp0 <- empDF$EMPIRIC0
-emp1 <- empDF$EMPIRIC1
-emp2 <- empDF$EMPIRIC2
-emp3 <- empDF$EMPIRIC3
-emp4 <- empDF$EMPIRIC4
-emp5 <- empDF$EMPIRIC5
-emp6 <- empDF$EMPIRIC6
-empR <- empDF$EMPIRICR
-targ <- empDF$TARGETED
+ABXp <- empDF$pEMPIRIC
+ABXe <- empDF$EMPIRIC
+ABXb <- empDF$BETWEEN
+ABXt <- empDF$TARGETED
+ABXl <- empDF$lTARGETED
 source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/ConcordanceFlagFunction.R')
 
 for (i in seq_len(nrow(empDF))) {
    print(i)
-   empDF$FLAG0[i] <- getConcordanceFlag(empDF[i,], emp0[[i]])
-   empDF$FLAG1[i] <- getConcordanceFlag(empDF[i,], emp1[[i]])
-   empDF$FLAG2[i] <- getConcordanceFlag(empDF[i,], emp2[[i]])
-   empDF$FLAG3[i] <- getConcordanceFlag(empDF[i,], emp3[[i]])
-   empDF$FLAG4[i] <- getConcordanceFlag(empDF[i,], emp4[[i]])
-   empDF$FLAG5[i] <- getConcordanceFlag(empDF[i,], emp5[[i]])
-   empDF$FLAG6[i] <- getConcordanceFlag(empDF[i,], emp6[[i]])
-   empDF$FLAGR[i] <- getConcordanceFlag(empDF[i,], empR[[i]])
-   empDF$FLAGT[i] <- getConcordanceFlag(empDF[i,], targ[[i]])
+   empDF$FLAGp[i] <- getConcordanceFlag(empDF[i,], ABXp[[i]])
+   empDF$FLAGe[i] <- getConcordanceFlag(empDF[i,], ABXe[[i]])
+   empDF$FLAGb[i] <- getConcordanceFlag(empDF[i,], ABXb[[i]])
+   empDF$FLAGt[i] <- getConcordanceFlag(empDF[i,], ABXt[[i]])
+   empDF$FLAGl[i] <- getConcordanceFlag(empDF[i,], ABXl[[i]])
    
-   empDFo$FLAG0[i] <- getConcordanceFlag(empDFo[i,], emp0[[i]])
-   empDFo$FLAG1[i] <- getConcordanceFlag(empDFo[i,], emp1[[i]])
-   empDFo$FLAG2[i] <- getConcordanceFlag(empDFo[i,], emp2[[i]])
-   empDFo$FLAG3[i] <- getConcordanceFlag(empDFo[i,], emp3[[i]])
-   empDFo$FLAG4[i] <- getConcordanceFlag(empDFo[i,], emp4[[i]])
-   empDFo$FLAG5[i] <- getConcordanceFlag(empDFo[i,], emp5[[i]])
-   empDFo$FLAG6[i] <- getConcordanceFlag(empDFo[i,], emp6[[i]])
-   empDFo$FLAGR[i] <- getConcordanceFlag(empDFo[i,], empR[[i]])
-   empDFo$FLAGT[i] <- getConcordanceFlag(empDFo[i,], targ[[i]])
+   empDFo$FLAGp[i] <- getConcordanceFlag(empDFo[i,], ABXp[[i]])
+   empDFo$FLAGe[i] <- getConcordanceFlag(empDFo[i,], ABXe[[i]])
+   empDFo$FLAGb[i] <- getConcordanceFlag(empDFo[i,], ABXb[[i]])
+   empDFo$FLAGt[i] <- getConcordanceFlag(empDFo[i,], ABXt[[i]])
+   empDFo$FLAGl[i] <- getConcordanceFlag(empDFo[i,], ABXl[[i]])
 }
-print(Sys.time() - start) # ~6 minutes
+print(Sys.time() - start) # ~4 minutes
 
 save(empDF, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_imputed_flagged.Rdata'))
 save(empDFo, file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_flagged.Rdata'))

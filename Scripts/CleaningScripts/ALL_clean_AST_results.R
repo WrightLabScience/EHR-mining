@@ -1,6 +1,7 @@
 ####################################################
 ############# CLEAN UP AST RESULT TABLE ############
 ####################################################
+start <- Sys.time()
 library(dplyr)
 library(tidyr)
 
@@ -90,28 +91,24 @@ astrDF <- astrDF %>%
 # to collapse identical results (ignoring LINE_NUM and RESULT_DATE)
 astrDF <- astrDF %>%
    select(-LINE_NUM) %>%
-   # select(-RESULT_DATE) %>%
-   distinct() # 21,544,642 --> 21,510,091
+   distinct() # 21,518,066 --> 21,486,921
+
+# if same antibiotic tested against same pathogen on same order, take maximum
+astrDF <- astrDF %>% group_by(ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC)
+astrDFm <- astrDF %>% filter(n() > 1L)  # 16,461 (8,222 groups)
+astrDFm <- astrDFm %>% slice_max(STATUS) # 11,852 (8,222 groups) - still some with much later result_dates
+astrDFm <- astrDFm %>% slice_min(RESULT_DATE) # 8,2222
+astrDFm <- ungroup(astrDFm)
+astrDF <- rbind(astrDF %>% filter(n() == 1L) %>% ungroup(), astrDFm) %>%
+   arrange(PERSON_ID, ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC) # 21,501,852
+rm(astrDFm)
 
 
-# dup_ids <- astrDF$ORDER_PROC_ID[duplicated(astrDF[-3])]
-# length(dup_ids) # 3,638
-
-
-
-# # 21,506,453 --> 21,501,852
-# astrDF1 <- astrDF %>% filter(n() == 1L, .by = c(ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC)) # 21,497,251
-# astrDF2 <- astrDF %>% filter(n() > 1L, .by = c(ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC))  # 9,202
-# astrDF2 <- astrDF2 %>% slice_max(STATUS, by = c(ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC)) # 4,601
-# astrDF <- rbind(astrDF1, astrDF2) %>%
-#    arrange(PERSON_ID, ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC) # 21,501,852
-# rm(astrDF1, astrDF2)
-
+# check for missingness
 sapply(astrDF, function(x) sum(is.na(x)))
 astrDF %>% count(is.na(PATH_NAME), is.na(ANTIBIOTIC), is.na(STATUS))
+astrDF %>% count(is.na(STATUS)) # 1,650,202
 
-# astrDF <- astrDF %>% filter(!is.na(PATH_NAME), !is.na(ANTIBIOTIC)) # 21,510,091 --> 21,486,898
-astrDF %>% count(is.na(STATUS)) # 1,650,554
 
 # get all antibiotic names
 abx <- unique(astrDF$ANTIBIOTIC)
@@ -119,6 +116,7 @@ save(abx, file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_name
 
 ######################################################################################
 save(astrDF, file = paste0(data_path_name, 'lab_micro_sens_all_cleaned_long.Rdata'))
+print(Sys.time() - start) # ~14.5 minutes
 ######################################################################################
 
 
@@ -132,7 +130,7 @@ load(file = paste0(data_path_name, 'lab_micro_sens_all_cleaned_long.Rdata'))
 
 # pivot to wide
 start <- Sys.time()
-astrDF <- astrDF %>% # 21,486,898 --> 1,789,478
+astrDF <- astrDF %>% # 21,478,682 --> 1,789,478
    pivot_wider(id_cols = c(PERSON_ID, ORDER_PROC_ID, RESULT_DATE, BUG),
                names_from = ANTIBIOTIC,
                values_from = STATUS,

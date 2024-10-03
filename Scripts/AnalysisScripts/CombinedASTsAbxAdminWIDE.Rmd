@@ -8,29 +8,30 @@ date: "`r Sys.Date()`"
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
-load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
-
-
+abbr <- c(abbr, setNames('No abx', 'No abx'))
+#load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023.Rdata'))
+load(file = paste0(data_path_name, 'ASTs_AbxAdmin_blood_2017_2023_imputed_flagged_WIDE.Rdata'))
 
 
 # Course sizes
 makePlot <- function(d, main='', targ=FALSE) {
-   x <- empDF[[paste0('EMPIRIC', d)]][empDF$DELAY > d]
-   if (targ) x <- empDF$TARGETED
-   n <- sum(empDF$DELAY > d)
+   x <- empDF[[d]]
+   n <- nrow(empDF)
    x <- table(lengths(x)) / n
-   x <- c(x[names(x) %in% as.character(0:2)], sum(x[!names(x) %in% as.character(0:2)]))
-   names(x)[names(x) == ''] <- '>=3'
+   x <- c(x[names(x) %in% as.character(0:3)], sum(x[!names(x) %in% as.character(0:3)]))
+   names(x)[names(x) == ''] <- '>=4'
    b <- barplot(x, plot=F)
-   barplot(x, ylim=c(0, 1), xlab='Number of antibiotics', main=paste0(main, ' (n = ', prettyNum(n, big.mark=','), ')'), yaxt='n')
+   barplot(x, ylim=c(0, 1), xlab='Number of antibiotics', main=main, yaxt='n')
    axis(side=2, las=1)
    text(x = b, y = x+0.05, labels=paste0(round(x, 3) * 100, '%'))
 }
-par(mfrow=c(2,2), oma=c(4,0,0,0), mar=c(4, 3, 2, 1), mgp=c(1.75, 0.5, 0), tck=-0.015)
-makePlot(0, 'day of order')
-makePlot(1, '1 day after order')
-makePlot(2, '2 days after order')
-makePlot(0, 'Day of result', targ=TRUE)
+par(mfcol=c(2,3), oma=c(4,0,0,0), mar=c(4, 3, 2, 1), mgp=c(1.75, 0.5, 0), tck=-0.015)
+makePlot('ABX_EMPp', '<-24 before order')
+makePlot('ABX_EMP', 'Empiric (-24, +12)')
+makePlot('ABX_BTW', '12 hrs after order, before result')
+makePlot('ABX_TAR', 'Targeted')
+makePlot('ABX_TARl', '>3 days after result')
+plot.new()
 ```
 
 
@@ -38,10 +39,13 @@ makePlot(0, 'Day of result', targ=TRUE)
 
 ```{r, fig.height=2.75, fig.width=7, echo=FALSE}
 # Empiric course and course size
-makeBarplot <- function(main='') {
+makeBarplot <- function(main='', side) {
+   if (side == 'left')  par(mar=c(2.5, 8, 2.5, 0.5))
+   if (side == 'right') par(mar=c(2.5, 6, 2.5, 2.5))
    n <- 8
    b <- barplot(rep(1, n), horize=T, plot=F)
-   x <- empDF$EMPIRIC0
+   x <- empDF$ABX_EMP
+   x[lengths(x) == 0L] <- 'No abx'
    if (grepl('whole', main))  x <- unlist(sapply(x, function(x) paste(abbr[x], collapse='+')))
    if (grepl('single', main)) x <- abbr[unlist(x)]
    h <- head(sort(table(x), decreasing = TRUE) / nrow(empDF), n)
@@ -50,30 +54,51 @@ makeBarplot <- function(main='') {
    axis(side=2, at=b, labels=names(h), las=1, tick=F, xpd=NA)
    text(x = h + 0.01, y = b, adj = 0, xpd=NA, labels = paste0(round(h,3)*100, '%'))
 }
-makePlot <- function(d, main='', targ=FALSE) {
-   x <- empDF[[paste0('EMPIRIC', d)]][empDF$DELAY > d]
-   if (targ) x <- empDF$TARGETED
-   n <- sum(empDF$DELAY > d)
-   x <- table(lengths(x)) / n
-   x <- c(x[names(x) %in% as.character(0:2)], sum(x[!names(x) %in% as.character(0:2)]))
-   names(x)[names(x) == ''] <- '>=3'
-   b <- barplot(x, plot=F)
-   barplot(x, ylim=c(0, 1), xlab='Number of antibiotics', yaxt='n',
-           main=main)
-   axis(side=2, las=1)
-   text(x = b, y = x+0.05, labels=paste0(round(x, 3) * 100, '%'))
-}
-par(mfrow=c(1,3), mgp=c(1.75,0.5,0), tck=-0.015)
-par(mar=c(4, 3, 2.5, 1))
-makePlot(0, 'Empiric course size')
-par(mar=c(2.5, 4, 2.5, 0.5))
-makeBarplot(main='Empiric course (whole)')
-makeBarplot(main='Empiric course (single)')
 
+par(cex.main=1, mfrow=c(1,2), mgp=c(1.75,0.5,0), tck=-0.015)
+makeBarplot(main='Empiric course (whole)', side='left')
+makeBarplot(main='Empiric course (single)', side='right')
 
 
 # Does empiric course depend upon gram-stain?
+n <- 8
+b <- barplot(rep(1, n), horize=T, plot=F)
+makeBarplot <- function(bug = '', side='') {
+   if (side == 'left')   par(mar=c(2.5, 8, 2.5, 0.5))
+   if (side == 'middle') par(mar=c(2.5, 7, 2.5, 1.5))
+   if (side == 'right')  par(mar=c(2.5, 6, 2.5, 2.5))
+   if (side =='') par(mar = c(2.5, 4.5, 2.5, 0))
+   if (bug == 'Gram negatives') {
+      x <- empDF$ABX_EMP[grep('Klebsiella|Escherichia|Acinetobacter|Citrobacter|Enterobacter|Morganella|Serratia|Proteus|Pseudomonas', empDF$BUG)]
+   } else if (bug == 'Gram positives') {
+      x <- empDF$ABX_EMP[grep('Enterococ|Streptoc|Staph', empDF$BUG)]
+   } else {
+      x <- empDF$ABX_EMP[grep(bug, empDF$BUG)]
+   }
+   x[lengths(x) == 0L] <- 'No abx'
+   x <- abbr[unlist(x)]
+   #x <- sapply(x, function(a) paste(abbr[a], collapse='+'))
+   h <- head(sort(table(x), decreasing = TRUE) / length(x), n)
+   barplot(h, horiz=TRUE, names.arg=NA, xlim=c(0,0.5))
+   axis(side=2, at=b, labels=names(h), las=1, tick=F)
+   title(main=paste0(bug, ' (n = ', prettyNum(length(x), big.mark=','), ')'), line=0.25, xpd=NA)
+   text(x = h + 0.01, y = b, adj = 0, xpd=NA,
+        labels = paste0(round(h,3)*100, '%'))
+}
 
+# mar=c(2.5, 6, 2.5, 2.5)
+par(mfrow=c(1,2), mgp=c(1.75,0.5,0), tck=-0.015)
+makeBarplot('Gram positives', 'left')
+makeBarplot('Gram negatives', 'right')
+
+par(mfrow=c(1, 3), mar=c(2.5, 6.5, 1.5, 1), mgp=c(1.25,0.4,0), tck=-0.015)
+makeBarplot('Streptococcus')
+makeBarplot('Staphylococcus aureus')
+makeBarplot('Enterococcus faecalis')
+
+makeBarplot('Escherichia coli')
+makeBarplot('Klebsiella pneumoniae')
+makeBarplot('Pseudomonas aeruginosa')
 ```
 
 
@@ -87,14 +112,9 @@ makeBarplot <- function(x, main='') {
    t <- t(apply(t, 1, function(x) x / sum(x) * 100))
    rownames(t)[rownames(t) == 'TRUE'] <- 'multiple'
    rownames(t)[rownames(t) == 'FALSE'] <- 'single'
-   barplot(t, beside=TRUE, main=main, leg=TRUE, args.legend=list(title='# isolates'), ylab='%', xlab='# of antibiotics')
+   barplot(t, ylim=c(0,40), beside=TRUE, main=main, leg=TRUE, args.legend=list(title='# blood isolates'), ylab='%', xlab='# of antibiotics')
 }
 par(mfrow=c(1,1), mar=c(5,5,3,3))
-makeBarplot(x=empDF$TARGETED, main='Targeted course sizes')
-makeBarplot(x=empDF$EMPIRIC0, main='Empiric0 course sizes')
-makeBarplot(x=empDF$EMPIRIC1, main='Empiric1 course sizes')
-
-
-
-
+makeBarplot(x=empDF$ABX_EMP, main='Empiric course sizes')
+makeBarplot(x=empDF$ABX_TAR, main='Targeted course sizes')
 ```
