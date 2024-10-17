@@ -1,0 +1,275 @@
+---
+title: "EmpiricDiscordanceSurvival"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r echo=FALSE}
+library(dplyr, quietly = TRUE)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE_survival.Rdata')
+
+
+########### MRSA VAN empiric unnecesary?
+
+
+
+
+
+x <- empDF$SURV_TIME
+d <- sum(empDF$PATIENT_STATUS == 'DECEASED', na.rm=T) 
+cat(sum(x <= 30, na.rm=T) / d)  # ~30%
+cat(sum(x <= 90, na.rm=T) / d)  # ~45%
+cat(sum(x <= 365, na.rm=T) / d) # ~68%
+d <- nrow(empDF)
+cat(sum(x <= 30, na.rm=T) / d)  # ~12%
+cat(sum(x <= 90, na.rm=T) / d) # ~18%
+cat(sum(x <= 365, na.rm=T) / d) # ~27%
+
+
+# 30-day mortality by bug
+bugs <- c(
+   "Escherichia coli", "Staphylococcus aureus", "Klebsiella pneumoniae", "Enterococcus faecalis",
+   "Pseudomonas aeruginosa", "Proteus mirabilis", "Enterococcus faecium", "Enterobacter cloacae", 
+   "Streptococcus agalactiae", "Streptococcus pneumoniae", "Serratia marcescens", "Klebsiella oxytoca"
+)
+d30mort <- function(bug) {
+   x <- empDF$SURV_TIME[empDF$BUG == bug]
+   d30 <- round(sum(x <= 30, na.rm=T) / length(x) * 100, 1)
+   cat(d30, '% - ', bug, '\n', sep='')
+}
+cat('% of patients deceased within 30 days of bloodstream infection with:\n')
+for (bug in bugs)
+   d30mort(bug)
+
+
+
+hist(empDF$AGE, breaks=diff(range(empDF$AGE)), xlab='Years', main = 'Age at blood culture')
+median(empDF$AGE) # 68 years
+abline(v = quantile(empDF$AGE, c(0.1, 0.25, 0.5, 0.75, 0.9)))
+
+x <- empDF$SURV_TIME
+hist(x, breaks=diff(range(x, na.rm=T)), xlim=c(0, 180), xlab='Days', main='Survival time after order')
+
+empDF <- empDF %>% mutate(DAYS_ALIVE = as.integer(DEATH_DATE - ORDER_DAY))
+
+t <- table(empDF$DAYS_ALIVE[empDF$DAYS_ALIVE <= 180])
+barplot(t, xlab='Days', main='Survival time after order')
+
+
+# 30-day, 6-month survival BY BUG
+t <- empDF %>%
+   filter(n() >= 500L, .by=BUG) %>% # 3,254 / 4,024
+   mutate(M = DAYS_ALIVE <= 30) %>%
+   mutate(M = ifelse(is.na(M), FALSE, M)) %>%
+   mutate(M = case_when(
+      DAYS_ALIVE <= 30 ~ 'm1',
+      DAYS_ALIVE > 30 & DAYS_ALIVE <= 180 ~ 'm2',
+      .default = 'alive'
+   )) %>%
+   summarise(n = n(),
+             .by = c(BUG, M)) %>%
+   tidyr::pivot_wider(names_from = M,
+                      values_from = n) %>%
+   select(BUG, m1, m2, alive)
+
+bugs <- t$BUG
+t <- as.matrix(t %>% select(m1, m2, alive))
+rownames(t) <- bugs; rm(bugs)
+t <- t[order(t[,'m1'] / rowSums(t)), ]
+t <- t(t)
+colnames(t) <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1. \\2', colnames(t))
+colnames(t)[colnames(t) == 'Coagulase Negative Staph'] <- 'Coag. neg. Staph'
+colnames(t)[colnames(t) == 'Viridans Streptococci'] <- 'Viridans group Strep'
+n <- colSums(t)
+t <- apply(t, 2, function(x) x / sum(x) * 100)
+xvals <- apply(t, 2, function(x) {
+   cs <- cumsum(c(0,x))
+   cs[1:3] + diff(cs) / 2
+})
+xvals[nrow(xvals), ] <- xvals[nrow(xvals), ncol(xvals)]
+pcnt <- round(t)
+pcnt[, ncol(pcnt)] <- paste0(pcnt[, ncol(pcnt)], '%')
+bugs <- colnames(t)
+
+par(mar=c(3, 9, 1.5, 4), mgp=c(1.5, 0.5, 0))
+b <- barplot(t, horiz=TRUE, names.arg=rep('',ncol(t)), xlab='%')
+title(main='Mortality of 2017 bloodstream infections', line=0.65)
+text(x=-3, adj=1, y=b, labels=bugs, xpd=NA)
+text(x=xvals, y=rep(b, each=3), labels=pcnt, col=c('white', 'black', 'black'), xpd=NA)
+text(x=xvals[, ncol(xvals)], y=b[length(b)]+diff(b)[1]/1.1, labels=c('<30d', '<6m', '>6m'), xpd=NA)
+text(x=102, y=b, labels=n, adj=0, xpd=NA)
+text(x=102, y=b[length(b)]+diff(b)[1]/1.1, labels='N', font=2, adj=0, xpd=NA)
+
+```
+
+
+
+
+```{r echo=FALSE, fig.width=9}
+#### EMPIRIC DISCORDANCE SURVIVAL ANALYSIS ####
+DF <- empDF %>%
+   select(PERSON_ID, GENDER, DOB, DEATH_DATE, FLAGe, ORDER_DAY, RESULT_DAY, BUG, AGE, DEATH_DATE) %>%
+   reframe(BUG = unique(BUG),
+           FLAGe = paste(sort(unique(FLAGe)), collapse=' + '),
+           .by = c(PERSON_ID, GENDER, DOB, DEATH_DATE, ORDER_DAY, RESULT_DAY, AGE, DEATH_DATE)) %>%
+   mutate(DISC = case_when(
+      grepl('DISCORDANT', FLAGe) ~ 'DISCORDANT',
+      !grepl('DISCORDANT', FLAGe) & grepl('CONCORDANT', FLAGe) ~ 'CONCORDANT',
+      .default = FLAGe
+   )) %>%
+   mutate(NoEmp = DISC == 'No abx given') %>%
+   mutate(status = ifelse(is.na(DEATH_DATE), 1, 2))
+
+DF$DEATH_DATE[is.na(DF$DEATH_DATE)] <- as.Date('2024-09-30', format='%Y-%m-%d')
+DF <- DF %>% mutate(time = as.integer(DEATH_DATE - ORDER_DAY))
+
+
+zval <- qnorm(1- (1-0.95)/2, 0,1)
+
+getVertices <- function(x, y) {
+   x <- c(0, x)
+   y <- c(1, y)
+   if (x[length(x)] < 730) {
+      x <- c(x, 730)
+      y <- c(y, y[length(y)])
+   }
+   return(list(x = c(x[1], rep(x[2:length(x)], each=2)),
+               y = c(rep(y[1:(length(y)-1)], each=2), y[length(y)])))
+}
+
+plotSurv <- function(x, y, s, col) {
+   v <- getVertices(x, y)
+   lines(x = v$x,
+         y = v$y,
+         col = col, lwd=2)
+   vu <- getVertices(x, y + zval * s)
+   vl <- getVertices(x, y - zval * s)
+   polygon(x=c(vu$x, rev(vu$x)), y=c(vu$y, rev(vl$y)), col=paste0(col, '30'), border=NA)
+}
+
+col_vec <- c('concordant'='#0000FF', 'discordant'='#FF0000')#, 'no therapy'='gray')
+ypos <- c(0.99, 0.95, 0.91, 0.87)
+
+makeKPplots <- function(bug='all pathogens') {
+   w <- 1:nrow(DF)
+   if (bug != 'all pathogens') w <- which(DF$BUG == bug)
+   df <- DF[w,] %>% filter(DISC %in% c('CONCORDANT', 'DISCORDANT'))#, 'No empiric therapy given'))
+   sample_sizes <- table(df$DISC)[c('CONCORDANT', 'DISCORDANT')]#, 'No empiric therapy given')]
+   
+   if (length(unique(df$DISC)) == 1L) return()
+   fit <- survival::survfit(survival::Surv(time, status) ~ DISC, data=df)
+   pval <- survival::survdiff(survival::Surv(time, status) ~ DISC, data=df)$pvalue
+   d <- which(summary(fit)$strata == 'DISC=DISCORDANT')
+   s <- summary(fit)
+   xvals <- s$time
+   yvals <- s$surv
+   ste <- s$std.err
+   
+   layout(mat=matrix(1:2, nrow=1), widths=c(2,1))
+   par(oma=c(0,1,0,0.25), mar=c(3.5, 5, 3, 0.25), mgp=c(1.5,0.35,0), tck=-0.01)
+   plot(NA, ylim=c(0,1), xlim=c(0, 730), xaxt='n', yaxt='n', xaxs='i', yaxs='i', xpd=NA, xlab='Months', ylab='Surviving fraction')
+   title(main=paste0(bug, ' (n = ', prettyNum(nrow(df), big.mark=','), ')'), line=0.5)
+   
+   plotSurv(x=xvals[d],  y=yvals[d],  s=ste[d],  col=col_vec['discordant'])
+   plotSurv(x=xvals[-d], y=yvals[-d], s=ste[-d], col=col_vec['concordant'])
+   axis(side=1, at=seq(0, 730, 365/3), labels=seq(0,24,4))
+   axis(side=2, las=1)
+   abline(v = 365/3, lty=2)
+   text(x=365*2-5, y=ypos[1], adj=c(1,1), labels=paste0('p = ', prettyNum(pval, digits=3, scientific=-1)))
+   text(x=365*2-5, y=ypos[2:3], adj=c(1,1), col=col_vec,
+        labels=paste0(names(col_vec), ' (n = ', prettyNum(sample_sizes, big.mark=','), ')'))
+   
+   par(mar=c(3.5, 3.5, 11.5, 0.25), mgp=c(1, 0.2, 0), tck=-0.025)
+   plot(NA, ylim=c(0.75,1), xlim=c(0,30), xaxs='i', yaxt='n', yaxs='i', xlab='Days', ylab='', main='')
+   title(main='30-day', line=0.5)
+   axis(side=2, las=1, at=seq(0.75,1,0.05))
+   plotSurv(x=xvals[d],  y=yvals[d],  s=ste[d],  col=col_vec['discordant'])
+   plotSurv(x=xvals[-d], y=yvals[-d], s=ste[-d], col=col_vec['concordant'])
+}
+
+# All bugs
+makeKPplots()
+
+bugs <- c(
+   'Staphylococcus aureus',
+   'Klebsiella pneumoniae',
+   'Enterococcus faecium',
+   'Enterococcus faecalis',
+   'Escherichia coli',
+   'Streptococcus pneumoniae',
+   'Pseudomonas aeruginosa',
+   'Serratia marcescens',
+   'Enterobacter cloacae'
+)
+for (bug in bugs) {
+   print(bug)
+   makeKPplots(bug)
+}
+
+
+
+
+
+
+
+
+#### Survival analysis using resistance only - condition on concordant empiric therapy!
+DF <- empDF %>%
+   filter(BUG == 'Staphylococcus aureus') %>%
+   filter(FLAGe == 'CONCORDANT') %>%
+   mutate(status = ifelse(is.na(DEATH_DATE), 1, 2))
+
+DF$DEATH_DATE[is.na(DF$DEATH_DATE)] <- as.Date('2024-09-30', format='%Y-%m-%d')
+DF <- DF %>% mutate(time = as.integer(DEATH_DATE - ORDER_DAY))
+
+
+fit <- survival::survfit(survival::Surv(time, status) ~ OXACILLIN + FLAGe, data=DF)
+plot(fit, xlim=c(0,60))
+survival::survdiff(survival::Surv(time, status) ~ OXACILLIN + FLAGe, data=DF)$pvalue
+
+
+
+
+DF <- empDF %>%
+   filter(BUG == 'Enterococcus faecium') %>%
+   filter(FLAGe == 'CONCORDANT') %>%
+   mutate(status = ifelse(is.na(DEATH_DATE), 1, 2))
+
+DF$DEATH_DATE[is.na(DF$DEATH_DATE)] <- as.Date('2024-09-30', format='%Y-%m-%d')
+DF <- DF %>% mutate(time = as.integer(DEATH_DATE - ORDER_DAY))
+
+
+fit <- survival::survfit(survival::Surv(time, status) ~ VANCOMYCIN, data=DF)
+plot(fit, xlim=c(0,60))
+survival::survdiff(survival::Surv(time, status) ~ VANCOMYCIN, data=DF)$pvalue
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

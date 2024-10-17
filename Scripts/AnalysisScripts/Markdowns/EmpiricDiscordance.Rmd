@@ -1,0 +1,574 @@
+---
+title: "Empiric Discordance"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r, echo=FALSE, message=FALSE, fig.height=4.25}
+library(dplyr, quietly = TRUE)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE_survival.Rdata')
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_blood_2017_2023.Rdata')
+astDF <- empDF %>%
+   select(PERSON_ID, ORDER_DATE, RESULT_DATE, BUG) %>%
+   left_join(y = astDF %>% select(PERSON_ID, ORDER_DATE, RESULT_DATE, BUG, CEFEPIME:DELAFLOXACIN),
+             relationship='many-to-many',
+             multiple = 'first',
+             by = join_by(PERSON_ID, ORDER_DATE, RESULT_DATE, BUG))
+astDF <- astDF %>% arrange(PERSON_ID, BUG, ORDER_DATE)
+empDF <- empDF %>% arrange(PERSON_ID, BUG, ORDER_DATE)
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
+abbr <- c(abbr, setNames('No abx', 'No abx'))
+
+
+# mostly therapies staying concordant or going from discordant --> concordant
+empDF %>% select(FLAGe, FLAGt) %>% table()
+
+t <- empDF %>% 
+   filter(!is.na(ADMIT_DAY)) %>%
+   filter(!grepl('+', FACILITY, fixed=TRUE)) %>%
+   summarise(total = n(),
+             treated = sum(FLAGe != 'No abx given'),
+             disc = sum(FLAGe == 'DISCORDANT') / treated * 100,
+             no_abx = sum(FLAGe == 'No abx given') / treated * 100,
+             conc = sum(FLAGe == 'CONCORDANT') / treated * 100,
+             nt = sum(FLAGe == 'NOTTESTED') / treated * 100,
+             .by = FACILITY) %>%
+   filter(total > 200) %>%
+   arrange(desc(total))
+knitr::kable(t, digits=1, format='pipe')
+
+#    FACILITY     n   disc no_abx  conc    nt
+# 1 UPMCPUH   5702 13.0    18.2   63.3  5.44 - Presbyterian
+# 2 UPMCSHY   4890 14.6    15.2   65.7  4.58 - Shadyside
+# 3 UPMCALT   3296  9.31   11.7   77.5  1.40 - Altoona
+# 4 UPMCHAM   3279 10.5    15.9   70.7  2.93 - Hamot        (NWPA + WNY)
+# 5 UPMCPAS   3279 12.4    11.6   72.6  3.51 - Passavant    (which one? prob mccandless)
+# 6 UPMCMER   2592  9.18   11.8   76.3  2.74 - Mercy
+# 7 UPMCSMH   2121 11.8    15.6   68.3  4.24 - St. Margaret
+# 8 UPMCEAS   2076 11.6    11.0   73.6  3.85 - East
+# 9 UPMCWIL   1664  8.59   10.2   76.3  4.99 - Williamsport
+# 10 UPMCJAM   1076 16.6    10.3   70.9  2.14 - Jameson
+# 11 UPMCMCK   1049 11.3    11.8   72.8  4.00 - McKeesport
+# 12 UPMCMWH    820 11.7    12.8   70.2  5.24 - Magee
+# 13 UPMCNOR    702 13.0    12.0   72.8  2.28 - Northwest
+# 14 UPMCCHA    632  7.12   12.5   77.7  2.69 - Chatauqua     (NY)
+# 15 UPMCHZN    496 10.7    11.3   75.4  2.62 - Horizon       (which one?)
+# 16 UPMCBED    357 14.0     7.00  73.9  5.04 - Bedford
+# 17 UPMCSOL    229 10.5    12.7   69.4  7.42 - 
+# 18 CHP        121  0.826  88.4   10.7  0    - Children's
+# 19 UPMCLOC     89  4.49   12.4   78.7  4.49 - 
+# 20 UPMCMUN     70 10       7.14  77.1  5.71 - 
+# 21 UPMCSUN      6 16.7     0     50   33.3  - 
+
+
+
+
+
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, fig.height=4.25, eval=TRUE}
+# # missing ASTs for concordance analysis
+# empDF %>% 
+#    filter(FLAG == 'NOTTESTED', BUG == 'Staphylococcus aureus') %>%
+#    select(PERSON_ID, ORDER_DAY, FLAG, BUG, ABX) %>%
+#    distinct() %>%
+#    count(ABX, sort=TRUE)
+# empDF %>% 
+#    filter(FLAG == 'NOTTESTED', BUG == 'Staphylococcus aureus', ABX == 'AZITHROMYCIN') %>%
+#    count(OXACILLIN, CLINDAMYCIN)
+
+
+
+
+# combine multiple blood isolate cases
+df <- empDF %>%
+   group_by(PERSON_ID, ORDER_DAY) %>% mutate(MULT_BLOOD_ISO = n() > 1L) %>% ungroup() %>%
+   select(PERSON_ID, ORDER_DAY, BUG, ABX_EMP, FLAGe, FLAGer, MULT_BLOOD_ISO) %>%
+   summarise(ABX_EMP = list(unique(unlist(ABX_EMP))),
+             BUG = paste0(sort(unique(BUG)), collapse=' + '),
+             FLAGe = paste(sort(unique(FLAGe)), collapse=' + '),
+             FLAGer = paste(sort(unique(FLAGer)), collapse=' + '),
+             .by=c(PERSON_ID, ORDER_DAY, MULT_BLOOD_ISO))
+df <- df %>%
+   mutate(across(
+      .cols = c(FLAGe, FLAGer),
+      .fns = ~ case_when(
+               grepl('+', ., fixed=TRUE) & grepl('DISCORDANT', .) ~ 'DISCORDANT',
+               grepl('+', ., fixed=TRUE) & !grepl('DISCORDANT', .) & grepl('CONCORDANT', .) ~ 'CONCORDANT',
+               . == 'No abx given + NOTTESTED' ~ 'NOTTESTED',
+               .default = .
+      )))
+df %>% count(FLAGe)
+n <- round(sum(df$FLAGe == 'No abx given') / nrow(df) * 100, 1)
+c <- round(sum(df$FLAGe == 'CONCORDANT') / sum(df$FLAGe != 'No abx given') * 100, 1)
+d <- round(sum(df$FLAGe == 'DISCORDANT') / sum(df$FLAGe != 'No abx given') * 100, 1)
+nt <- round(sum(df$FLAGe == 'NOTTESTED') / sum(df$FLAGe != 'No abx given') * 100, 1)
+cat(n, '% received no empiric therapy\n', sep='')
+cat(c, '% concordant\n', sep='')
+cat(d, '% discordant\n', sep='')
+cat(nt, '% not tested\n', sep='')
+
+df %>% count(FLAGe, FLAGer, sort=TRUE)
+
+#sw <- round(sum(df$FLAGe == 'DISCORDANT' & df$FLAGer == 'CONCORDANT') / sum(df$FLAGe == 'DISCORDANT') * 100, 1)
+sw <- round(sum(df$FLAGe == 'DISCORDANT' & df$FLAGer == 'CONCORDANT') / sum(df$FLAGe != 'No abx given') * 100, 1)
+cat (sw, '% of those called discordant MIGHT be concordant if time stamp issue didnt exist\n', sep='')
+
+#sw <- round(sum(df$FLAGe == 'No abx given' & df$FLAGer != 'No abx given') / sum(df$FLAGe == 'No abx given') * 100, 1)
+sw <- round(sum(df$FLAGe == 'No abx given' & df$FLAGer != 'No abx given') / nrow(df) * 100, 1)
+cat (sw, '% of those called no abx given MIGHT have received empiric treatment if time stamp issue didnt exist\n', sep='')
+
+
+
+
+# multi-clonal infections have twice the rate of discordance
+t <- df %>% select(FLAGe, MULT_BLOOD_ISO) %>% table()
+t <- apply(t, 2, function(x) round(x / sum(x) * 100, 1))
+print(t)
+
+
+t <- empDF %>%
+   summarise(total=n(),
+             treated = sum(FLAGe != 'No abx given'),
+             conc = sum(FLAGe == 'CONCORDANT'),
+             disc = sum(FLAGe == 'DISCORDANT'),
+             nt = sum(FLAGe == 'NOTTESTED'),
+             no = sum(FLAGe == 'No abx given'),
+             .by=BUG) %>%
+   mutate(across(c(disc, nt, conc), ~ . / treated * 100),
+          no = no / total * 100)
+
+cat('DISCORDANCE STATS')
+cat('Organized by total')
+t %>% arrange(desc(total))
+cat('Organized by rates of no treatment')
+t %>% filter(total > 100L) %>% arrange(desc(no))
+cat('Organized by rates of discordance')
+t %>% filter(total > 100L) %>% arrange(desc(disc)) %>% print(n=12)
+cat('Organized by rates of concordance')
+t %>% filter(total > 100L) %>% arrange(desc(conc)) %>% print(n=12)
+cat('Organized by rates of not tested')
+t %>% filter(total > 100L) %>% arrange(desc(nt)) %>% print(n=12)
+
+
+
+# old
+#### Empiric discordance relative to recency of antibiotic prescriptions ####
+{
+# empDF %>%
+#    mutate(prv_abx = !is.na(DAYS_SINCE_MOST_RECENT_ABX)) %>%
+#    summarise(sum(FLAGe == 'DISCORDANT') / n(),
+#              .by = prv_abx)
+# t <- empDF %>%
+#    mutate(prv_abx = case_when(
+#       DAYS_SINCE_MOST_RECENT_ABX > 14L ~ '> 2w',
+#       DAYS_SINCE_MOST_RECENT_ABX > 7L & DAYS_SINCE_MOST_RECENT_ABX <= 14L ~ '1-2w',
+#       DAYS_SINCE_MOST_RECENT_ABX <= 7L & DAYS_SINCE_MOST_RECENT_ABX > 1L ~ '1w',
+#       DAYS_SINCE_MOST_RECENT_ABX == 1L ~ '1d',
+#       is.na(DAYS_SINCE_MOST_RECENT_ABX) ~ '> 1m'
+#    )) %>%
+#    summarise('discordant' = sum(FLAGe == 'DISCORDANT') / n(),
+#              'concordant' = sum(FLAGe == 'CONCORDANT') / n(),
+#              'no empiric abx' = sum(FLAGe == 'No empiric therapy given') / n(),
+#              'not tested' = sum(FLAGe == 'NOT TESTED') / n(),
+#              .by = prv_abx) %>%
+#    arrange(discordant)
+# n <- t$prv_abx
+# t <- as.matrix(t[-1])
+# rownames(t) <- n
+# t <- t(t)
+# b <- barplot(t, plot=FALSE)
+# y <- cumsum(c(0, t[,ncol(t)]))
+# y <- y[-1] - diff(y) / 2
+# 
+# par(mar=c(3.5,3,3,6), mgp=c(2, 0.5, 0), tck=-0.015)
+# barplot(t, xlab='Last antibiotic administration')
+# text(x=b[length(b)]+0.6, y=y, adj=0, labels=rownames(t), xpd=NA)
+}
+
+
+###################################
+#### Time to first concordance ####
+###################################
+xlim <- c(-48, 72)
+ylim <- c(0, 10500)
+col_vec <- c('#FF000055', '#0000FF55')
+hist(empDF$TIME_TO_FIRST_ABX, breaks=diff(range(empDF$TIME_TO_FIRST_ABX, na.rm=T)), ylim=ylim, xpd=NA,
+     xlim=xlim, col=col_vec[1], main='Timing of first antibiotic therapy', xlab='Hours')
+hist(empDF$TIME_TO_CONC, breaks=diff(range(empDF$TIME_TO_CONC, na.rm=T)), add=TRUE, col=col_vec[2])
+legend('topright', legend=c('first antibiotic', 'first concordant'), xpd=NA,
+       pch=15, col=col_vec, pt.cex = 2.5)
+
+hist(empDF$TIME_TO_FIRST_ABX_STRICT, breaks=diff(range(empDF$TIME_TO_FIRST_ABX_STRICT, na.rm=T)), ylim=ylim, xpd=NA,
+     xlim=xlim, col=col_vec[1], main='Timing of first antibiotic therapy\n-remove missing time stamps', xlab='Hours')
+hist(empDF$TIME_TO_CONC_STRICT, breaks=diff(range(empDF$TIME_TO_CONC_STRICT, na.rm=T)), add=TRUE, col=col_vec[2])
+legend('topright', legend=c('first antibiotic', 'first concordant'), xpd=NA,
+       pch=15, col=col_vec, pt.cex = 2.5)
+
+
+n <- sum(!is.na(empDF$TIME_TO_FIRST_ABX)) / 100
+sum(empDF$TIME_TO_CONC < -48, na.rm=T) / n # 0%
+sum(empDF$TIME_TO_CONC < -24, na.rm=T) / n # 2.0%
+sum(empDF$TIME_TO_CONC < 0, na.rm=T) / n    # 30.8%
+sum(empDF$TIME_TO_CONC < 24, na.rm=T) / n   # 83%
+sum(empDF$TIME_TO_CONC >= 24, na.rm=T) / n   # 13.4%
+sum(empDF$TIME_TO_CONC >= 48, na.rm=T) / n   # 6.4%
+sum(empDF$TIME_TO_CONC >= 72, na.rm=T) / n   # 2.9%
+sum(empDF$TIME_TO_CONC >= 96, na.rm=T) / n   # 1.6%
+(sum(is.na(empDF$TIME_TO_CONC)) - sum(is.na(empDF$TIME_TO_FIRST_ABX))) / n # 3.6%
+
+n <- sum(!is.na(empDF$TIME_TO_FIRST_ABX_STRICT)) / 100
+sum(empDF$TIME_TO_CONC_STRICT < -48, na.rm=T) / n # 0%
+sum(empDF$TIME_TO_CONC_STRICT < -24, na.rm=T) / n # 1.3%
+sum(empDF$TIME_TO_CONC_STRICT < 0, na.rm=T) / n    # 7.5%
+sum(empDF$TIME_TO_CONC_STRICT < 24, na.rm=T) / n   # 82%
+sum(empDF$TIME_TO_CONC_STRICT >= 24, na.rm=T) / n   # 13.9%
+sum(empDF$TIME_TO_CONC_STRICT >= 48, na.rm=T) / n   # 6.6%
+sum(empDF$TIME_TO_CONC_STRICT >= 72, na.rm=T) / n   # 3.1%
+sum(empDF$TIME_TO_CONC_STRICT >= 96, na.rm=T) / n   # 1.6%
+(sum(is.na(empDF$TIME_TO_CONC_STRICT)) - sum(is.na(empDF$TIME_TO_FIRST_ABX_STRICT))) / n # 3.9%
+
+```
+
+```{r, fig.width=8.5, fig.height=5, eval=TRUE}
+makeBarplot <- function(bug, drug, strict=FALSE) {
+   col_vec <- c('S' = '#0000FF99', 'R' = '#FF000099')
+   if (strict) {
+      r <- empDF$TIME_TO_CONC_STRICT[empDF$BUG == bug & empDF[[drug]] == 1L]
+      s <- empDF$TIME_TO_CONC_STRICT[empDF$BUG == bug & empDF[[drug]] == 0L]  
+   } else {
+      r <- empDF$TIME_TO_CONC[empDF$BUG == bug & empDF[[drug]] == 1L]
+      s <- empDF$TIME_TO_CONC[empDF$BUG == bug & empDF[[drug]] == 0L]
+   }
+   if (length(r) == 0 | length(s) == 0) {
+      plot.new()
+      return()
+   }
+   med_diff <- median(r, na.rm=T) - median(s, na.rm=T)
+   r[r < 0] <- 0
+   s[s < 0] <- 0
+   r[r > 72] <- 72
+   s[s > 72] <- 72
+   hist(s, breaks=diff(range(s, na.rm=T)), xlim=c(0, 72), xaxt='n', xlab='Days (relative to blood culture)', 
+        main=paste0(round(med_diff, 1), ' hours'), border=NA, col=col_vec['S'], cex.main=1)
+   hist(r, breaks=diff(range(r, na.rm=T)), add=TRUE, border=NA, col=col_vec['R'])
+   abline(v = c(median(s, na.rm=T), median(r, na.rm=T)), lty=2, lwd=2, col=col_vec)
+   axis(side=1, at=seq(-24,72,24), labels=-1:3)
+   axis(side=1, at=seq(-24,72,6), labels=rep('', length(seq(-24,72,6))))
+   legend('topright', title=stringr::str_to_sentence(drug), legend=c('S', 'R'), col=col_vec, pch=15, pt.cex=2, bty='n')
+}
+
+
+par(mfrow=c(1,2), mgp=c(1.75, 0.5, 0), mar=c(5,3,2,1), oma=c(0,0,2,0))
+bugs <- c('Enterococcus faecium' = 'VANCOMYCIN', 
+          'Staphylococcus aureus' = 'OXACILLIN',
+          'Escherichia coli' = 'ESBL', 
+          'Klebsiella pneumoniae' = 'ESBL',
+          'Pseudomonas aeruginosa' = 'ESBL',
+          'Enterococcus faecalis' = 'RIFAMPIN', 
+          'Pseudomonas aeruginosa' = 'CIPROFLOXACIN',
+          'Serratia marcescens' = 'ESBL',
+          'Enterobacter cloacae' = 'PIPERACILLIN/TAZOBACTAM')
+print('Time shown under each title is median(time to conc for resistant isolates) - median(time to conc for susceptible isolates)')
+for (i in seq_along(bugs)) {
+   bug <- names(bugs)[i]
+   drug <- bugs[i]
+   makeBarplot(bug, drug)
+   makeBarplot(bug, drug, strict=TRUE)
+   mtext(text=paste0('Time to first concordant therapy - ', names(bugs)[i]),
+         side=3, line=-0.5, outer=TRUE, xpd=NA, at=0.5, font=4)
+}
+```
+
+
+```{r, fig.height=7.5, eval=TRUE}
+###########################################################
+#### Empiric therapies / rates of discordance - BY BUG ####
+###########################################################
+empDF$EMP_ABBR <- sapply(empDF$ABX_EMP, function(x) paste(abbr[x], collapse='+'))
+
+makeFlagPlot <- function(e, main='', leg=FALSE, d) {
+   pcnt_disc <- round(d['DISCORDANT'] / sum(d), 3) * 100
+   
+   abx <- e$EMP_ABBR
+   total <- nrow(e)
+   
+   w_noAbx_inpt <- which(abx == '' & !is.na(e$ADMIT_DAY))
+   w_noAbx_noInpt <- which(abx == '' & is.na(e$ADMIT_DAY))
+   
+   abx[w_noAbx_inpt] <- 'No abx (inpt)'
+   abx[w_noAbx_noInpt] <- 'No abx (no inpt)'
+   no_abx <- c('No abx (inpt)', 'No abx (no inpt)')
+   
+   h <- table(abx, e$FLAGe) / total * 100
+   h <- h[order(rowSums(h), decreasing=TRUE), ]
+   no_abx <- no_abx[no_abx %in% rownames(h)]
+   if (length(no_abx) > 0) {
+      x <- h[no_abx, ]
+      h <- h[!rownames(h) %in% no_abx, ]
+   }
+   
+   n <- min(c(12, nrow(h)))
+   h <- t(head(h, n))
+   if (!'NOTTESTED' %in% rownames(h)) h <- rbind(h, 0); rownames(h)[nrow(h)] <- 'NOTTESTED'
+   h <- h[c('DISCORDANT', 'CONCORDANT', 'NOTTESTED', 'No abx given'), ]
+   h <- cbind(h, t(x))
+   
+   b <- barplot(h, horiz=TRUE, names.arg=rep('', ncol(h)), legend=leg, xpd=NA, xaxt='n', font.main=4,
+                col = gray.colors(n=4, start=0.2, end=0.92), xlim=c(0, 40), space=c(rep(0.1, n), 0.4, 0.1),
+                main=paste0(main, '\n(n = ', prettyNum(total, big.mark=','), ' - ', pcnt_disc, '% discordant)'))
+   axis(side=2, at=b, labels=colnames(h), las=1, tick=F)
+   axis(side=1)
+   text(x = colSums(h) + max(h)*0.01, y = b, adj = 0, xpd=NA, labels = round(colSums(h), 1))
+}
+
+PlotBug <- function(bug, drug) {
+   bug_abbr <- gsub('^([A-Z])[a-z]+ ([a-z]+)$', '\\1_\\2', bug)
+   bug_abbr_main <- gsub('_', '\\. ', bug_abbr)
+   drug_abbr <- abbr[drug]
+   if (drug == 'ESBL') drug_abbr <- drug
+   cat(bug, '-', drug, '\n')
+   
+   e <- empDF %>% filter(BUG == bug) %>% mutate(!!drug := ifelse(is.na(get(drug)), -1, get(drug)))
+   t <- e %>% filter(FLAGe != 'No abx given') %>% select(FLAGe, !!drug) %>% table()
+   if (ncol(t) == 1) return()
+   
+   makeFlagPlot(e=e, main=bug_abbr_main, leg=TRUE, d=rowSums(t))
+   csums <- colSums(t)
+   if (csums['0'] > 20L) {
+      makeFlagPlot(e=e %>% filter(get(drug) == 0L), main=paste0(bug_abbr_main, ' ', drug_abbr, '-S'), d=t[,'0']) 
+   } else {
+      plot.new()
+   }
+   if (csums['1'] > 20L) {
+      makeFlagPlot(e=e %>% filter(get(drug) == 1L), main=paste0(bug_abbr_main, ' ', drug_abbr, '-R'), d=t[,'1']) 
+   } else {
+      plot.new()
+   }
+}
+
+layout(matrix(c(1,1,2,3), nrow=2, byrow=T))
+par(mar=c(2,7,3,4), mgp=c(1.5, 0.5, 0), oma=c(2,0,2,0))
+bugs <- c('Enterococcus faecium' = 'VANCOMYCIN', 
+          'Staphylococcus aureus' = 'OXACILLIN',
+          'Escherichia coli' = 'ESBL', 
+          'Klebsiella pneumoniae' = 'ESBL',
+          'Pseudomonas aeruginosa' = 'CEFTRIAXONE',
+          'Enterococcus faecalis' = 'RIFAMPIN', 
+          'Pseudomonas aeruginosa' = 'CIPROFLOXACIN',
+          'Serratia marcescens' = 'ESBL',
+          'Enterobacter cloacae' = 'PIPERACILLIN/TAZOBACTAM')
+for (b in seq_along(bugs)) {
+   bug <- names(bugs)[b]
+   drug <- unname(bugs[b])
+   PlotBug(bug, drug)
+}
+```
+
+<br>
+<br>
+<br>
+
+#### This section describes the relationship between the ***extent*** of resistance and the likelihood of receiving discordant empiric therapy
+
+The x-axis for the following plots is one of the following:
+
+* **absolute number** of antibiotics to which an isolate was **measured** resistant
+* **proportion** of antibiotics to which an isolate was **measured** resistant
+* **absolute number** of antibiotics to which an isolate was **imputed** to be resistant
+* **proportion** of antibiotics to which an isolate was **imputed** resistant
+
+The y-axis shows the proportion that isolates with the given ***extent*** of resistance received discordant therapy. The caveat is that this number is likely underestimated, potentially by as much as the proportion for which we could not make a concordant/discordant judgement due to lack of knowledge about an isolate's resistance profile. We call this "unknown" and it is shown in <span style="color:red;">red</span>.
+
+
+```{r, echo=FALSE, fig.height=7, eval=TRUE}
+#################################################
+###### LEVEL OF RESISTANCE VS. DISCORDANCE ######
+#################################################
+common_bugs <- c("Escherichia coli", "Staphylococcus aureus", "Klebsiella pneumoniae", 
+                 "Enterococcus faecalis", "Pseudomonas aeruginosa", "Proteus mirabilis", 
+                 "Enterococcus faecium", "Enterobacter cloacae", "Streptococcus pneumoniae", 
+                 "Streptococcus agalactiae", "Serratia marcescens", "Klebsiella oxytoca", 
+                 "Streptococcus mitis", "Viridans Streptococci", "Streptococcus pyogenes", 
+                 "Streptococcus anginosus", "Morganella morganii", "Klebsiella aerogenes", 
+                 "Acinetobacter baumannii")
+wE <- empDF$BUG %in% common_bugs
+wA <- astDF$BUG %in% common_bugs
+if (!all(wE == wA)) {
+   print('DATA FRAMES ARE DANGEROUSLY DIFFERENT!!')
+   break
+}
+
+empDF <- empDF[wE, ]
+astDF <- astDF[wE, ]
+
+
+
+getDF <- function(df, flags, prop=FALSE, i=FALSE) {
+   if (prop) {
+      t <- apply(df %>% select(CEFEPIME:DELAFLOXACIN), 1, function(x) sum(x, na.rm=T) / sum(!is.na(x), na.rm=T))
+      t[t >= 0   & t < 0.05] <- 0
+      t[t >= 0.05 & t < 0.1] <- 0.05
+      t[t >= 0.1 & t < 0.15] <- 0.1
+      t[t >= 0.15 & t < 0.2] <- 0.15
+      t[t >= 0.2 & t < 0.25] <- 0.2
+      t[t >= 0.25 & t < 0.3] <- 0.25
+      t[t >= 0.3 & t < 0.35] <- 0.3
+      t[t >= 0.35 & t < 0.4] <- 0.35
+      t[t >= 0.4 & t < 0.45] <- 0.4
+      t[t >= 0.45 & t < 0.5] <- 0.45
+      t[t >= 0.5 & t < 0.55] <- 0.5
+      t[t >= 0.55 & t < 0.6] <- 0.55
+      t[t >= 0.6 & t < 0.65] <- 0.6
+      t[t >= 0.65 & t < 0.7] <- 0.65
+      t[t >= 0.7 & t < 0.75] <- 0.7
+      t[t >= 0.75 & t < 0.8] <- 0.75
+      t[t >= 0.8 & t < 0.85] <- 0.8
+      t[t >= 0.85 & t < 0.9] <- 0.85
+      t[t >= 0.9 & t < 0.95] <- 0.9
+      t[t >= 0.95   & t < 1] <- 0.95
+   } else {
+      t <- apply(df %>% select(CEFEPIME:DELAFLOXACIN), 1, function(x) sum(x, na.rm=T))
+   }
+   w <- which(is.na(t))
+   if (length(w) > 0) {
+      t <- t[-w]
+      flags <- flags[-w]  
+   }
+   t <- table(t, flags)
+   if (any(colnames(t) == 'No abx given')) {
+      t <- t[, colnames(t) != 'No abx given']
+   }
+   n <- rowSums(t)
+   w <- which(n >= 10L)
+   n <- n[w]
+   t <- t[w,]
+   t <- apply(t, 1, function(x) x / sum(x))
+   t <- as.data.frame(t(t))
+   return(list(n=n, t=t))
+}
+
+makePlot <- function(t, xlab='', prop=FALSE, max_height, ylab=TRUE, num_bugs=TRUE, leg=FALSE) {
+   pch <- 16
+   cex = 0.9
+   xvals <- as.numeric(rownames(t$t))
+   if (prop)  xlim <- c(-0.05, 1.05)
+   if (!prop) xlim <- c(-0.5, max(xvals)+0.5)
+   plot(x = xvals,
+        y = t$t$DISCORDANT,
+        pch = pch, cex = cex,
+        xlim = xlim,
+        xaxs='i', xaxt='n',
+        ylim = c(0, 1), yaxt = 'n',
+        ylab='', xlab='')
+   title(xlab=xlab, line=1.4)
+   if (prop)  axis(side=1, at=seq(0, 1, 0.2))
+   if (!prop) axis(side=1, at=0:max(xvals))
+   if (ylab) {
+      title(ylab='Proportion discordant', xpd=NA)
+      axis(side=2, at=seq(0,1,0.2), las=1)
+   }
+   lines(x=xvals, y=t$t$DISCORDANT, lwd=0.5)
+   #points(x=xvals, y=t$t$NOTTESTED, pch=pch, cex=cex, col='red')
+   #lines(x=xvals, y=t$t$NOTTESTED, col='red')
+   #if (leg) legend('topleft', inset=c(0.025, 0), bty='n', pt.cex=cex, legend=c('discordant', 'unknown'), pch=16, col=c('black', 'red'), lty=1)
+   
+   par(new=TRUE)
+   bar_col <- '#000000'
+   bar_width <- ifelse(prop, 0.025, 0.5)
+   bar_heights <- t$n / max_height
+   rect(xleft = xvals - bar_width,
+        xright = xvals + bar_width,
+        ybottom = 0,
+        ytop = bar_heights,
+        border=NA,
+        col = paste0(bar_col, '22'))
+   if (num_bugs) {
+      sc_fac <- 10^(length(unlist(strsplit(as.character(max_height), '')))-1)
+      s <- seq(0, floor(max_height/sc_fac)*sc_fac, sc_fac)
+      axis(side=4, las=1, col=paste0(bar_col, '66'), col.axis=paste0(bar_col, '66'),
+           at=seq(0, s[length(s)]/max_height, length.out=length(s)), 
+           labels=s)
+      mtext(side=4, line=2.5, text='Number of isolates', cex=par('cex.lab')-0.15, col=paste0(bar_col, '66'))
+   }
+}
+
+
+toa <- getDF(astDF, empDF$FLAGe)
+top <- getDF(astDF, empDF$FLAGe, prop=TRUE)
+tia <- getDF(empDF, empDF$FLAGe, i=T)
+tip <- getDF(empDF, empDF$FLAGe, prop=TRUE, i=T)
+max_height <- max(c(toa$n, top$n, tia$n, tip$n))
+
+
+
+# overall plots
+par(mfrow=c(2,2), mar=c(2.5, 0.5, 0.5, 0.5), oma=c(5,3,2,3.5), mgp=c(1.7, 0.3, 0), tck=-0.01)
+makePlot(toa, 'number of resistance phenotypes', max_height=max_height, leg=T, num_bugs=T)
+plot.new()
+plot.new()
+plot.new()
+
+makePlot(toa, 'measured (absolute number)', max_height=max_height, leg=T, num_bugs=F)
+makePlot(top, 'measured (proportion - binned)', prop=TRUE, ylab=F, max_height=max_height)
+makePlot(tia, 'imputed (absolute number)', max_height=max_height, num_bugs=F)
+makePlot(tip, 'imputed (proportion - binned)', prop=TRUE, ylab=F, max_height=max_height)
+mtext(side=3, at=0.5, text='All pathogens', outer=TRUE, line=0, xpd=NA, font=2)
+
+
+
+# bug-specific plots
+makeBugPlots <- function(bug) {
+   a <- astDF[astDF$BUG == bug, ]
+   e <- empDF[empDF$BUG == bug, ]
+   f <- empDF$FLAGe[empDF$BUG == bug]
+   toa <- getDF(a, f)
+   top <- getDF(a, f, prop=T)
+   tia <- getDF(e, f, i=T)
+   tip <- getDF(e, f, prop=T, i=T)
+   max_height <- max(c(toa$n, top$n, tia$n, tip$n))
+   makePlot(toa, 'abs. number measured', max_height=max_height,                  ylab=T, num_bugs=F, leg=T)
+   makePlot(top, 'fraction measured (binned)', prop=TRUE, max_height=max_height, ylab=F, num_bugs=T)
+   makePlot(tia, 'abs. number imputed', max_height=max_height,                   ylab=T, num_bugs=F)
+   makePlot(tip, 'fraction imputed (binned)', prop=TRUE, max_height=max_height,  ylab=F, num_bugs=T)
+   mtext(side=3, at=0.5, text=bug, outer=TRUE, line=0, xpd=NA, font=2)
+}
+
+par(mfrow=c(2,2), mar=c(2.5, 0.5, 0.5, 0.5), oma=c(5,3,2,3.5), mgp=c(1.7, 0.3, 0), tck=-0.01)
+for (bug in common_bugs) {
+   print(bug)
+   makeBugPlots(bug)
+}
+
+
+
+par(mfrow=c(1,1), mar=c(5, 5, 5, 5), oma=c(0,0,0,0), mgp=c(1.7, 0.3, 0), tck=-0.01)
+# extent of resistance vs. time to concordance
+R <- apply(astDF %>% select(CEFEPIME:DELAFLOXACIN), 1, function(x) sum(x, na.rm=T))
+
+f <- function(r) {
+   t <- table(R >= r, empDF$TIME_TO_CONC_STRICT >= 24)
+   f <- fisher.test(t)
+   if (f$p.value > 0.01) return(NA)
+   return(c(f$estimate, f$conf.int))
+}
+
+t <- sapply(1:12, f)
+plot(NA, xlim=c(1,12), ylim=c(1, max(t)), log='y',
+     , ylab='Odds ratio', xlab='Number of resistance phenotypes', main='Resistance increases likelihood of > 24 hour delay to concordant therapy')
+points(x=1:12, y=t[1,], pch=16)
+arrows(x0=1:12, y0=t[2,], y1=t[3,], code=3, angle=90, length=0.05)
+```
+
+
+
+
+
+
+
+
+
+
+

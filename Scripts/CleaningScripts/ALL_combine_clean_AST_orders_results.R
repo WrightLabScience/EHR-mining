@@ -63,7 +63,6 @@ astDF <- astDF %>% # 1,835,382
           RESULT_DAY = as.Date(substr(RESULT_DATE,1,10))) %>%
    relocate(ORDER_DAY, RESULT_DAY, .after=RESULT_DATE)
 
-
 # if same order_day
 astDF <- astDF %>% # 1,804,069 (1,789,627 groups) if SECOND (1,794,092 groups if FIRST)
    group_by_all() %>%
@@ -104,9 +103,9 @@ nrow(astDF)
 
 
 ###################################################################################
-save(astDF, file = paste0(data_path_name, '/ALL_clean_ASTs.Rdata'))
+save(astDF, file = paste0(data_path_name, 'ALL_clean_ASTs.Rdata'))
 ###################################################################################
-print(Sys.time() - start) # ~5 minutes
+print(Sys.time() - start) # ~3-5 minutes
 
 
 

@@ -137,9 +137,9 @@ astrDF <- astrDF %>% # 21,478,682 --> 1,789,478
                values_fn = max,
                unused_fn = ~ paste(unique(.), collapse=', ')) %>%
    relocate(PATH_NAME, .after=BUG)
-print(Sys.time() - start) # 1.4 minutes
+print(Sys.time() - start) # 2.4 minutes
 
-
+# Detect MRSA from pathogen_name when oxacillin status is missing
 astrDF <- astrDF %>%
    mutate(OXACILLIN = case_when(
       is.na(OXACILLIN) & BUG == 'Staphylococcus aureus' & grepl('cillin resis|mrsa', PATH_NAME) & !grepl('previously reported as mrsa', PATH_NAME) ~ 1,
@@ -149,11 +149,117 @@ astrDF <- astrDF %>%
 
 
 
+# i think some of the enterobacterales I called ESBL-producing may not actually be
+# probably the ones that were missing CRO and were tested against any carbapenem
+astrDF_og <- astrDF
+astrDF <- astrDF %>%
+   mutate(ENT = BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Pseudomonas aeruginosa', 'Proteus mirabilis', 'Proteus penneri',
+                           "Enterobacter cloacae", "Klebsiella oxytoca", "Serratia marcescens", "Enterobacter aerogenes", "Klebsiella aerogenes",
+                           "Proteus vulgaris"),
+          ESBL_FLAG = grepl('esbl|extended spectrum beta lactamase', PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', PATH_NAME))
+astrDF <- astrDF %>%
+   mutate(ESBL = ENT & (ESBL_FLAG | CEFTRIAXONE == 1))
+astrDF <- astrDF %>%
+   mutate(ESBL = case_when(
+      is.na(ESBL) ~ 0,
+      ESBL ~ 1,
+      !ESBL ~ 0
+   )) %>%
+   select(-ENT, -ESBL_FLAG)
+# 
+# en <- astrDF %>%
+#    filter(BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Proteus mirabilis', 'Proteus penneri',
+#                      "Enterobacter cloacae", "Klebsiella oxytoca", "Serratia marcescens", "Enterobacter aerogenes", "Klebsiella aerogenes",
+#                      "Proteus vulgaris"))
+# en %>%
+#    summarise(esbl = sum(ESBL),
+#              not = sum(!ESBL),
+#              total = n(),
+#              rate = esbl / total * 100,
+#              .by=BUG) %>%
+#    arrange(desc(rate))
+# 
+# 
+# en <- en %>%
+#    mutate(testCarba = !is.na(MEROPENEM) | !is.na(DORIPENEM) | !is.na(ERTAPENEM) | !is.na(IMIPENEM),
+#           missCRO = is.na(CEFTRIAXONE),
+#           ESBL2 = )
+# 
+# sum(en$testCarba) / nrow(en) # 87%
+# sum(en$missCRO) / nrow(en)   # 26%
+# sum(en$ESBL) / nrow(en)      # 4.2%
+# 
+# en %>% select(testCarba, missCRO, ESBL) %>% table()
+# (97571)
+# 
+# 
+# f <- function(x) {
+#    total <- nrow(x)
+#    x <- sapply(x %>% select(CEFEPIME:DELAFLOXACIN), function(x) c(sum(x, na.rm=T), sum(!is.na(x))))
+#    rownames(x) <- c('R', 'Tot')
+#    x <- x[, x['Tot',] > 0]
+#    x <- data.frame(t(x))
+#    x$rate <- round(x$R / x$Tot * 100, 1)
+#    x$fracT <- round(x$Tot / total * 100, 1)
+#    x <- x[x$fracT > 50, c('rate', 'fracT')]
+#    x <- x[order(x$fracT), ]
+#    return(x)
+# }
+# 
+# en <- en %>% filter(as.integer(substr(RESULT_DATE,1,4)) > 2020)
+# 
+# p0 <- f(en %>% filter(ESBL))
+# p1 <- f(en %>% filter(!ESBL, missCRO, testCarba))
+# p2 <- f(en %>% filter(ESBL, missCRO, testCarba))
+# p3 <- f(en %>% filter(!ESBL, !missCRO, testCarba))
+# p4 <- f(en %>% filter(ESBL, !missCRO, testCarba))
+# p5 <- f(en %>% filter(!ESBL, missCRO, !testCarba))
+# p6 <- f(en %>% filter(ESBL, missCRO, !testCarba))
+# p7 <- f(en %>% filter(!ESBL, !missCRO, !testCarba))
+# p8 <- f(en %>% filter(ESBL, !missCRO, !testCarba))
+# 
+# # LEVOFLOXACIN                  72.9  60.4
+# # MEROPENEM                      3.2  62.2
+# # TOBRAMYCIN                    46.2  69.8
+# # NITROFURANTOIN                26.8  70.2
+# # ERTAPENEM                      5.2  70.6
+# # GENTAMICIN                    31.3  90.8
+# # CIPROFLOXACIN                 78.2  91.8
+# # TRIMETHOPRIM/SULFAMETHOXAZOLE 66.0  93.2
+# 
+# 
+# 
+# en %>% select(testCarba, missCRO) %>% table() # 86% of no carbapenem are missing CRO vs. 25% of yes carbapenem are missing CRO, testing against both is most likely, testing neither is 2nd likely
+# en %>% filter(testCarba, !missCRO) %>% count(CEFTRIAXONE)  #     tested against carbapenem, has CRO, most are CRO-susceptible
+# en %>% filter(!testCarba, !missCRO) %>% count(CEFTRIAXONE) # NOT tested against carbapenem, has CRO, most are CRO-susceptible
+# 
+# en %>% select(testCarba, ESBL) %>% table() # tested against carbapenem, slightly more likely to be flagged as ESBL
+# en %>% filter(testCarba, ESBL) %>% count(CEFTRIAXONE)  #     tested against carbapenem, has CRO, most are CRO-susceptible
+# en %>% filter(!testCarba, !) %>% count(CEFTRIAXONE)
+
+
+astrDF <- astrDF %>%
+   select(!c(`NA`, PAS))
+
+
+
+
 save(astrDF, file = '~/Desktop/EHR/EHR work/RdataFiles/AST_results_clean.Rdata')
 
-   
-   
-   
+
+
+astrDF <- astrDF %>% mutate(year = as.integer(substr(RESULT_DATE, 1,4)))
+
+x <- astrDF %>% filter(BUG == 'Escherichia coli') # ESBL prevalence has double in last 12 years 4.3% --> 8.5%
+x <- astrDF %>% filter(BUG == 'Pseudomonas aeruginosa') # declined??
+x <- astrDF %>% filter(BUG == 'Klebsiella pneumoniae') # 7% --> 13% over last 12 years
+x %>%
+   summarise(esbl = sum(ESBL),
+             n = n(),
+             rate = esbl / n * 100,
+             .by = year) %>%
+   arrange(desc(year)) %>%
+   print(n=21) # all bugs: doubled from 2.9 --> 5.1% over last 12 years
    
    
    

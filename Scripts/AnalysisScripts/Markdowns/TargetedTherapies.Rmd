@@ -1,0 +1,152 @@
+---
+title: "TargetedTherapies"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r echo=FALSE, message=FALSE, fig.height=7.25, fig.width=9.5}
+library(dplyr)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE_survival.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
+abbr <- c(abbr, setNames('No abx', 'No abx'))
+
+cex <- 1.1
+par(cex.main=cex, cex.lab=cex, cex.axis=cex)
+
+
+# note which are multi-clonal cultures
+empDF <- empDF %>%
+   group_by(PERSON_ID, ORDER_DAY) %>% 
+   mutate(MULT_BLOOD_ISO = n() > 1L) %>%
+   ungroup()
+
+common_drugs <- names(head(sort(table(unlist(empDF$ABX_TAR)), decreasing=TRUE), n=24))
+common_drugs <- unname(abbr[common_drugs])
+set.seed(123L)
+col_vec <- setNames(colors(distinct = TRUE)[sample(seq_along(colors(distinct=TRUE)), size=length(common_drugs))],
+                    common_drugs)
+
+empDF <- empDF %>% mutate(NO_TRT = lengths(ABX_EMPp) == 0L & lengths(ABX_EMP) == 0L & lengths(ABX_EMPr) == 0 & lengths(ABX_BTW) == 0L & lengths(ABX_TAR) == 0L & lengths(ABX_TARl) == 0L)
+empDF <- empDF %>% mutate(NO_PRE_TAR = lengths(ABX_EMPr) == 0 & lengths(ABX_EMP) == 0L & lengths(ABX_BTW) == 0L)
+empDF$TARG_ABBR <- sapply(empDF$ABX_TAR, function(x) paste(abbr[x], collapse='+'))
+
+
+makeBarplot <- function(bug, drug=character(), status=NULL, xmax, remove_no_prior_abx=FALSE, leg=FALSE) {
+   if (length(drug) == 2L) {
+      w <- intersect(which(empDF$BUG==bug), intersect(which(empDF[[drug[1]]]==status[2]), which(empDF[[drug[2]]]==status[2])))
+      resistance_phenotype <- paste(paste(abbr[drug], '-', ifelse(status==1L, 'R', 'S'), sep=''), collapse=' / ')
+   } else if (length(drug) == 1L) {
+      w <- intersect(which(empDF$BUG==bug), which(empDF[[drug]]==status))
+      resistance_phenotype <- paste0(abbr[drug], '-', ifelse(status==1L, 'R', 'S'))
+   } else if (length(drug) == 0L) {
+      w <- which(empDF$BUG == bug)
+      resistance_phenotype <- bug
+   }
+   
+   x <- empDF$TARG_ABBR[w]
+   w_died <- which(empDF$DEATH_DATE[w] < empDF$RESULT_DAY[w])
+   w_disch <- which(empDF$DISCHARGE_DAY[w] < empDF$RESULT_DAY[w] & x == '')
+   w_disch <- setdiff(w_disch, w_died)
+   w_noEnc <- which(is.na(empDF$ADMIT_DAY[w]) & x == '')
+   x[w_died] <- 'Deceased'
+   x[w_disch] <- 'Discharged'
+   x[w_noEnc] <- 'No encounter'
+   w_noAbx <- which(x == '')
+   x[w_noAbx] <- 'No abx given'
+   w_excluded <- union(union(w_died,  w_noAbx),
+                       union(w_disch, w_noEnc))
+   
+   total <- length(x)
+   num_treated <- length(x[-w_excluded])
+   
+   t0 <- strsplit(x[-w_excluded], '+', fixed=TRUE)
+   t0 <- sort(table(unlist(t0)), decreasing = TRUE)
+   num_abx <- 10
+   t <- head(t0, num_abx)
+   t <- c(t, table(x[w_excluded]))
+   abx_names <- names(t)
+   abx_nums <- unname(t)
+   t <- sapply(seq_along(t), function(i) {
+      tab <- table(grepl('+', x[grep(names(t)[i], x)], fixed=TRUE))
+      if (length(tab) == 2L) return(tab)
+      if (length(tab) == 1L & names(tab) == 'TRUE') return(c('FALSE'=0L, tab))
+      if (length(tab) == 1L & names(tab) == 'FALSE') return(c(tab, 'TRUE'=0L))
+   })
+   t <- t[2:1,]
+   colnames(t) <- abx_names
+   rownames(t)[rownames(t) == 'FALSE'] <- 'Mono'
+   rownames(t)[rownames(t) == 'TRUE'] <- 'Combin.'
+   t <- t / total * 100
+   abx_pos <- colSums(t)
+   
+   b <- barplot(t, horiz=TRUE, xlim=c(0, xmax), xlab='', yaxt='n', leg=leg, args.legend=list(cex=cex),
+                space = c(rep(0.1, num_abx), 0.4, rep(0.1, ncol(t) - num_abx - 1)))
+   title(main=paste0(resistance_phenotype, ' (n = ', total, ')'), line=0.5, font.main=4)
+   title(xlab='% of infections', cex.lab=cex+0.075)
+   # axis(side=1, las=1)
+   text(x=abx_pos+0.75, y=b, adj=0, labels=paste0(round(colSums(t)), '%'), cex=cex)
+   text(x=-0.75, y=b, adj=1, labels=abx_names, xpd=NA, cex=cex)
+}
+
+
+makeBugPlot <- function(bug, drug, status=list(0,1), xmax=70) {
+   layout(matrix(c(1,1,2,3), byrow=T, nrow=2))
+   par(oma=c(2,0,1,0), mgp=c(1.5, 0.3, 0), tck=-0.015)
+   par(mar=c(2.5, 8, 3, 8))
+   makeBarplot(bug=bug, xmax=xmax, leg=TRUE)
+   par(mar=c(2.5, 7, 3, 3))
+   makeBarplot(bug=bug, drug=drug, status=status[[1]], xmax=xmax)
+   par(mar=c(2.5, 4, 3, 6))
+   makeBarplot(bug=bug, drug=drug, status=status[[2]], xmax=xmax)
+}
+
+makeBugPlot(bug='Enterococcus faecium', drug=c('VANCOMYCIN', 'AMPICILLIN'), status=list(c(0,0), c(1,1)))
+makeBugPlot('Staphylococcus aureus', 'OXACILLIN')
+makeBugPlot('Klebsiella pneumoniae', drug='PIPERACILLIN/TAZOBACTAM')
+makeBugPlot('Klebsiella pneumoniae', drug='TRIMETHOPRIM/SULFAMETHOXAZOLE')
+makeBugPlot('Escherichia coli', drug='CIPROFLOXACIN')
+makeBugPlot('Escherichia coli', drug='TRIMETHOPRIM/SULFAMETHOXAZOLE')
+makeBugPlot('Enterococcus faecalis', drug='RIFAMPIN')
+makeBugPlot('Streptococcus pneumoniae', drug='ERYTHROMYCIN')
+makeBugPlot('Pseudomonas aeruginosa', drug='CIPROFLOXACIN')
+makeBugPlot('Serratia marcescens', drug='CEFTRIAXONE')
+makeBugPlot('Serratia marcescens', drug='PIPERACILLIN/TAZOBACTAM')
+makeBugPlot('Enterobacter cloacae', drug='PIPERACILLIN/TAZOBACTAM')
+```
+
+
+
+
+
+```{r}
+# makeLinePlot <- function(bug, drug, status, abx) {
+#    if (length(drug) == 2L) {
+#       w <- intersect(which(empDF$BUG==bug), intersect(which(empDF[[drug[1]]]==status[2]), which(empDF[[drug[2]]]==status[2])))
+#       resistance_phenotype <- paste(paste(abbr[drug], '-', ifelse(status==1L, 'R', 'S'), sep=''), collapse=' / ')
+#    } else if (length(drug) == 1L) {
+#       w <- intersect(which(empDF$BUG==bug), which(empDF[[drug]]==status))
+#       resistance_phenotype <- paste0(abbr[drug], '-', ifelse(status==1L, 'R', 'S'))
+#    }
+#    num_per_year <- table(as.integer(substr(empDF$ORDER_DAY[w], 1, 4)))
+#    w <- sapply(abx, function(x) w[grep(x, empDF$TARG_ABBR[w])])
+#    y <- sapply(w, function(i) as.integer(substr(empDF$ORDER_DAY[i], 1, 4)))
+#    t <- lapply(y, function(y) table(y))
+#    for (i in seq_along(t)) {
+#       if (length(t[[i]]) < 7) {
+#          missing_years <- (2017:2023)[which(!as.character(2017:2023) %in% names(t[[i]]))]
+#          t[[i]] <- c(t[[i]], setNames(rep(0,length(missing_years)), missing_years))
+#          t[[i]] <- t[[i]][order(as.integer(names(t[[i]])))]
+#       }
+#       t[[i]] <- t[[i]] / num_per_year
+#    }
+#    
+#    plot(NA, xlim=c(2017, 2023), ylim=c(0, max(sapply(t, max))), ylab='Proportion', xlab='Year', main=resistance_phenotype)
+#    for (i in seq_along(t))
+#       lines(x=2017:2023, y=t[[i]], col=col_vec[names(t[i])], lwd=2)
+#    legend('topright', inset=c(-0.325, 0), legend=abx, col=col_vec[names(t)], lwd=2, xpd=NA, bty='n')
+# }
+```
+
+
+
+
