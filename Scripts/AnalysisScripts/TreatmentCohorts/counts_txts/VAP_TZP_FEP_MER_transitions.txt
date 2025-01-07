@@ -1,0 +1,11 @@
+EmpiricTherapy	DefinitiveTherapy	n
+TZPo	TZPo	242
+FEPo	FEPo	128
+otherAbx	otherAbx	70
+TZPo	otherAbx	50
+TZPo	MER+TZP	47
+TZPo	TZP+FEP	47
+otherAbx	TZPo	35
+FEPo	otherAbx	33
+otherAbx	FEPo	32
+MERo	MERo	29

@@ -1,0 +1,9 @@
+DefinitiveTherapy	n
+TZPo	321
+FEPo	223
+MERo	99
+TZP+FEP	81
+FEP+MER	57
+MER+TZP	67
+TZP+FEP+MER	20
+otherAbx	190

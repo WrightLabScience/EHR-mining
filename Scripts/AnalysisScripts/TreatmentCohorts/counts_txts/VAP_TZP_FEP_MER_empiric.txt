@@ -1,0 +1,9 @@
+EmpiricTherapy	n
+TZPo	463
+FEPo	248
+MERo	57
+TZP+FEP	61
+FEP+MER	17
+MER+TZP	26
+TZP+FEP+MER	7
+otherAbx	174

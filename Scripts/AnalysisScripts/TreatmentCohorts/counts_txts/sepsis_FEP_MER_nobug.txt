@@ -1,0 +1,6 @@
+NoPathogenTherapy	n
+FEP	5848
+MER	1508
+both	784
+noAbx	6756
+otherAbx	13072

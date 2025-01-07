@@ -1,0 +1,6 @@
+EmpiricTherapy	n
+Carbapenem	2926
+Pip-tazo	4230
+both	728
+noAbx	2100
+otherAbx	10677

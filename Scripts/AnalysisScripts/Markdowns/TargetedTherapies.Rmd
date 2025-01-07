@@ -4,14 +4,17 @@ output: html_document
 date: "`r Sys.Date()`"
 ---
 
-```{r echo=FALSE, message=FALSE, fig.height=7.25, fig.width=9.5}
+```{r echo=FALSE, message=FALSE, fig.height=4.5, fig.width=10}
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE_survival.Rdata')
+#empDF <- empDF %>% filter(substr(ORDER_DAY, 1, 4) %in% as.character(2020:2023))
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
 abbr <- c(abbr, setNames('No abx', 'No abx'))
+abbr <- c(abbr, setNames('ESBL', 'ESBL'))
+source('~/Desktop/WrightLab/UsefulRfuncs/heatmap_new.R')
 
-cex <- 1.1
-par(cex.main=cex, cex.lab=cex, cex.axis=cex)
+cex <- 0.9
+par(cex.main=cex, cex.lab=cex, cex.axis=cex, cex=cex)
 
 
 # note which are multi-clonal cultures
@@ -37,7 +40,15 @@ makeBarplot <- function(bug, drug=character(), status=NULL, xmax, remove_no_prio
       resistance_phenotype <- paste(paste(abbr[drug], '-', ifelse(status==1L, 'R', 'S'), sep=''), collapse=' / ')
    } else if (length(drug) == 1L) {
       w <- intersect(which(empDF$BUG==bug), which(empDF[[drug]]==status))
+      if (length(w) == 0L) {
+         plot.new()
+         return()
+      }
       resistance_phenotype <- paste0(abbr[drug], '-', ifelse(status==1L, 'R', 'S'))
+      if (drug == 'ESBL') {
+         if (status == 1L) resistance_phenotype <- 'ESBL-producer'
+         if (status == 0L) resistance_phenotype <- 'not ESBL-producer'
+      }
    } else if (length(drug) == 0L) {
       w <- which(empDF$BUG == bug)
       resistance_phenotype <- bug
@@ -50,9 +61,9 @@ makeBarplot <- function(bug, drug=character(), status=NULL, xmax, remove_no_prio
    w_noEnc <- which(is.na(empDF$ADMIT_DAY[w]) & x == '')
    x[w_died] <- 'Deceased'
    x[w_disch] <- 'Discharged'
-   x[w_noEnc] <- 'No encounter'
+   x[w_noEnc] <- 'Not inpatient'
    w_noAbx <- which(x == '')
-   x[w_noAbx] <- 'No abx given'
+   x[w_noAbx] <- 'Inpatient'
    w_excluded <- union(union(w_died,  w_noAbx),
                        union(w_disch, w_noEnc))
    
@@ -79,39 +90,86 @@ makeBarplot <- function(bug, drug=character(), status=NULL, xmax, remove_no_prio
    t <- t / total * 100
    abx_pos <- colSums(t)
    
-   b <- barplot(t, horiz=TRUE, xlim=c(0, xmax), xlab='', yaxt='n', leg=leg, args.legend=list(cex=cex),
+   b <- barplot(t, horiz=TRUE, xlim=c(0, xmax), xlab='', yaxt='n', leg=leg,
                 space = c(rep(0.1, num_abx), 0.4, rep(0.1, ncol(t) - num_abx - 1)))
-   title(main=paste0(resistance_phenotype, ' (n = ', total, ')'), line=0.5, font.main=4)
-   title(xlab='% of infections', cex.lab=cex+0.075)
-   # axis(side=1, las=1)
-   text(x=abx_pos+0.75, y=b, adj=0, labels=paste0(round(colSums(t)), '%'), cex=cex)
-   text(x=-0.75, y=b, adj=1, labels=abx_names, xpd=NA, cex=cex)
+   bug_abbr <- gsub('([A-Z])[a-z]+ ([a-z]+)', '\\1. \\2', bug)
+   title(main=paste0(bug, ' - ', resistance_phenotype, ' (n = ', total, ')'), line=0.5, font.main=4)
+   title(xlab='% of infections')
+   #text(x=abx_pos+0.75, y=b, adj=0, labels=paste0(round(colSums(t)), '%'))
+   text(x=abx_pos+0.75, y=b, adj=0, labels=abx_nums)
+   text(x=-0.75, y=b, adj=1, labels=abx_names, xpd=NA)
 }
 
 
 makeBugPlot <- function(bug, drug, status=list(0,1), xmax=70) {
-   layout(matrix(c(1,1,2,3), byrow=T, nrow=2))
-   par(oma=c(2,0,1,0), mgp=c(1.5, 0.3, 0), tck=-0.015)
-   par(mar=c(2.5, 8, 3, 8))
-   makeBarplot(bug=bug, xmax=xmax, leg=TRUE)
+   #layout(matrix(c(1,1,2,3), byrow=T, nrow=2))
+   par(mfrow=c(1,2), oma=c(2,0,1,0), mgp=c(1.5, 0.3, 0), tck=-0.015)
+   #par(mar=c(2.5, 8, 3, 8))
+   #makeBarplot(bug=bug, xmax=xmax, leg=TRUE)
    par(mar=c(2.5, 7, 3, 3))
-   makeBarplot(bug=bug, drug=drug, status=status[[1]], xmax=xmax)
+   makeBarplot(bug=bug, drug=drug, status=status[[1]], xmax=xmax, leg=TRUE)
    par(mar=c(2.5, 4, 3, 6))
-   makeBarplot(bug=bug, drug=drug, status=status[[2]], xmax=xmax)
+   makeBarplot(bug=bug, drug=drug, status=status[[2]], xmax=xmax, leg=TRUE)
 }
+
 
 makeBugPlot(bug='Enterococcus faecium', drug=c('VANCOMYCIN', 'AMPICILLIN'), status=list(c(0,0), c(1,1)))
 makeBugPlot('Staphylococcus aureus', 'OXACILLIN')
-makeBugPlot('Klebsiella pneumoniae', drug='PIPERACILLIN/TAZOBACTAM')
-makeBugPlot('Klebsiella pneumoniae', drug='TRIMETHOPRIM/SULFAMETHOXAZOLE')
-makeBugPlot('Escherichia coli', drug='CIPROFLOXACIN')
-makeBugPlot('Escherichia coli', drug='TRIMETHOPRIM/SULFAMETHOXAZOLE')
-makeBugPlot('Enterococcus faecalis', drug='RIFAMPIN')
-makeBugPlot('Streptococcus pneumoniae', drug='ERYTHROMYCIN')
-makeBugPlot('Pseudomonas aeruginosa', drug='CIPROFLOXACIN')
-makeBugPlot('Serratia marcescens', drug='CEFTRIAXONE')
-makeBugPlot('Serratia marcescens', drug='PIPERACILLIN/TAZOBACTAM')
-makeBugPlot('Enterobacter cloacae', drug='PIPERACILLIN/TAZOBACTAM')
+makeBugPlot('Escherichia coli', drug='ESBL')
+makeBugPlot('Klebsiella pneumoniae', drug='ESBL')
+makeBugPlot('Pseudomonas aeruginosa', drug='CEFEPIME')
+makeBugPlot('Serratia marcescens', drug='ESBL')
+makeBugPlot('Enterobacter cloacae', drug='ESBL')
+```
+
+
+# Heatmaps of definitive therapies
+Along the *diagonal is monotherapy* with the indicated drug
+Off-diagonal cells indicate combination therapy and include instances where the two indicated antibiotics were used alongside a third, fourth, etc.
+
+```{r echo=FALSE, message=FALSE, fig.height=5.5, fig.width=10}
+############# HEATMAPS ################
+hm_plot <- function(bug, drug, status) {
+   w <- which(empDF$BUG == bug & empDF[[drug]] == status)
+   df <- empDF[w,]
+   
+   abx <- tail(sort(table(unlist(df$ABX_TAR))), n=8)
+   abx <- names(abx[abx > 0.05 * max(abx)])
+   
+   mat <- matrix(NA, nrow=length(abx), ncol=length(abx), dimnames=list(abx, abx))
+   
+   for (r in seq_len(nrow(mat))) {
+      r_w <- grep(abx[r], df$ABX_TAR)
+      for (c in seq_len(ncol(mat))) {
+         if (r == c) val <- sum(lengths(df$ABX_TAR[r_w]) == 1)
+         if (r != c) val <- length(intersect(r_w, grep(abx[c], df$ABX_TAR)))
+         mat[r, c] <- val
+      }
+   }
+   
+   rownames(mat) <- abbr[rownames(mat)]
+   colnames(mat) <- abbr[colnames(mat)]
+   
+   plot_heatmap(mat, upper_only=TRUE,
+                cols=colorRampPalette(c('white', '#D03326'))(max(mat)))
+   title(main=paste0(abbr[drug], '-', ifelse(status==0, 'S', 'R')), cex.main=1)
+}
+
+makeHeatmap <- function(bug, drug) {
+   hm_plot(bug, drug, 0)
+   hm_plot(bug, drug, 1)
+   mtext(text=bug, font=4, outer=TRUE, line=-1, cex=1)
+}
+
+
+par(mfrow=c(1,2), oma=c(3,0,0,0))
+makeHeatmap(bug='Enterococcus faecium', drug='VANCOMYCIN')
+makeHeatmap('Staphylococcus aureus', 'OXACILLIN')
+makeHeatmap('Escherichia coli', drug='ESBL')
+makeHeatmap('Klebsiella pneumoniae', drug='ESBL')
+makeHeatmap('Pseudomonas aeruginosa', drug='CEFEPIME')
+makeHeatmap('Serratia marcescens', drug='ESBL')
+makeHeatmap('Enterobacter cloacae', drug='ESBL')
 ```
 
 

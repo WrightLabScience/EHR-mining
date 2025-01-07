@@ -9,12 +9,6 @@ library(dplyr, quietly = TRUE)
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE_survival.Rdata')
 
 
-########### MRSA VAN empiric unnecesary?
-
-
-
-
-
 x <- empDF$SURV_TIME
 d <- sum(empDF$PATIENT_STATUS == 'DECEASED', na.rm=T) 
 cat(sum(x <= 30, na.rm=T) / d)  # ~30%

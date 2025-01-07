@@ -4,7 +4,7 @@ load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_blood_2017_2023_imputed.Rdat
 # Get encounter data for these patients
 source('~/Desktop/EHR/EHR work/config_file.R')
 
-
+# astDF <- astDF %>% filter(BUG == 'Staphylococcus aureus', OXACILLIN==1L)
 
 uniq_ids <- unique(astDF$PERSON_ID)
 chunks <- mapply(FUN = ':',
@@ -31,8 +31,10 @@ encs <- encs %>%
           DISCHARGE_DAY = as.Date(substr(DISCHARGE_DATE,1,10))) %>%
    distinct() # ~142K rows
 encs_og <- encs
+save(encs_og, file = '~/Desktop/EHR/EHR work/RdataFiles/ENCOUNTERS_raw_blood_2017_2023.Rdata')
 
 ## COMBINE OVERLAPPING / ABUTTING ENCOUNTERS
+# load(file = '~/Desktop/EHR/EHR work/RdataFiles/ENCOUNTERS_raw_blood_2017_2023.Rdata'); encs <- encs_og
 encs$SINCE <- as.integer(encs$ADMIT_DAY - lag(encs$DISCHARGE_DAY))
 encs$SINCE[encs$PERSON_ID != lag(encs$PERSON_ID)] <- NA
 encs$UNTIL <- lead(encs$SINCE)
@@ -49,13 +51,16 @@ endsOfRuns <- startsOfRuns + lengthsOfRuns - 1
 endsOfRuns <- endsOfRuns + encs$COMB_PREV[endsOfRuns + 1]
 runs <- mapply(FUN = ':', startsOfRuns, endsOfRuns, SIMPLIFY = FALSE) # ~7K
 
+encs$COMBINED_ADJ <- FALSE
 start <- Sys.time()
 for (i in seq_along(runs)) {
    block <- runs[[i]]
+   encs$COMBINED_ADJ[block] <- TRUE
    encs$ADMIT_DATE[block] <- min(encs$ADMIT_DATE[block])
    encs$DISCHARGE_DATE[block] <- max(encs$DISCHARGE_DATE[block])
 }
 print(Sys.time() - start) # ~2 minutes for ~7K runs
+rm(i, block)
 
 # Step 2: check the dates after runs to see if they fall inside the previous slot
 encs$ADMIT_DAY <- as.Date(substr(encs$ADMIT_DATE, 1, 10))
@@ -79,13 +84,14 @@ rm(w, count, r, lengthsOfRuns, startsOfRuns, endsOfRuns, runs, start)
 
 # combine rows with same ADMISSION and DISCHARGE DATES
 encs <- encs %>%
-   select(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE, ENCOUNTER_TYPE, FACILITY, ADMIT_SOURCE) %>%
+   select(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE, ENCOUNTER_TYPE, FACILITY, ADMIT_SOURCE, ADMIT_TYPE, COMBINED_ADJ) %>%
    distinct() %>%
    summarise(
-      ENCOUNTER_TYPE = paste(sort(unique(ENCOUNTER_TYPE)), collapse=' + '),
-      FACILITY = paste(sort(unique(FACILITY)), collapse=' + '),
-      ADMIT_SOURCE = paste(sort(unique(ADMIT_SOURCE)), collapse=' + '),
-      .by = c(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE)) # ~134K rows
+      ENCOUNTER_TYPE = paste(ENCOUNTER_TYPE, collapse=', '),
+      FACILITY = paste(FACILITY, collapse=', '),
+      ADMIT_SOURCE = paste(ADMIT_SOURCE, collapse=', '),
+      ADMIT_TYPE = paste(ADMIT_TYPE, collapse=', '),
+      .by = c(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE, COMBINED_ADJ)) # ~134K rows
 
 save(encs, file = '~/Desktop/EHR/EHR work/RdataFiles/ENCOUNTERS_cleaned_blood_2017_2023.Rdata')
 

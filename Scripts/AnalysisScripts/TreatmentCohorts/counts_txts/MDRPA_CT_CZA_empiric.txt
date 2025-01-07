@@ -1,0 +1,5 @@
+EmpiricTherapy	n
+CT	240
+CZA	135
+both	14
+neither	2755

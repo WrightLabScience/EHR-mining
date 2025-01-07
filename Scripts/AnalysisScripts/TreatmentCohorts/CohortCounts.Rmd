@@ -1,0 +1,154 @@
+---
+title: "CohortCounts"
+output: html_document
+date: '`r Sys.Date()`'
+---
+
+
+```{r echo=FALSE}
+library(gt)
+
+printTable <- function(fname, row_nums=1:2) {
+   x <- read.table(file = paste0('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/TreatmentCohorts/counts_txts/', fname, '.txt'), 
+                   header = TRUE, sep='\t')
+   
+   gt(x) %>%
+      tab_style(style = list(cell_text(weight = 'bold')),
+                locations = cells_column_labels()) %>%
+      tab_style(style = list(cell_fill(color = 'lightgray')),
+                locations = cells_body(rows = row_nums)) %>%
+      tab_options(table.align='left')
+}
+```
+
+<br>
+
+# Counts per treatment group
+
+<br>
+
+
+## ESBL - Carbapenems vs. Pip-tazo
+`r printTable('esbl_TZP_CAR_empiric')`
+`r printTable('esbl_TZP_CAR_definitive')`
+`r printTable('esbl_TZP_CAR_transitions', NA)`
+<br>
+<br>
+<br>
+
+
+
+## MRSA-BSI - Vancomycin vs. Daptomycin
+`r printTable('mrsa_bsi_VAN_DAP_definitive')`
+<br>
+<br>
+<br>
+
+
+
+## Sepsis - Cefepime vs. Meropenem
+<br>
+**Pathogen was identified - antibiotic administered in empiric window**
+`r printTable('sepsis_FEP_MER_empiric_bug')`
+<br>
+**Pathogen was identified - antibiotic administered after AST results available**
+`r printTable('sepsis_FEP_MER_definitive_bug')`
+<br>
+**Pathogen was identified - antibiotic administered anytime surrounding culture**
+`r printTable('sepsis_FEP_MER_all_bug')`
+<br>
+**Pathogen was not isolated - antibiotic administered anytime surrounding diagnosis**
+`r printTable('sepsis_FEP_MER_nobug')`
+<br>
+**Overall**
+`r printTable('sepsis_FEP_MER_overall')`
+<br>
+<br>
+<br>
+
+
+
+## *E. coli* - Fluoroquinolones vs. anything else
+<br>
+`r printTable('ecoli_FLQ_empiric', c(1,3))`
+`r printTable('ecoli_FLQ_definitive', c(1,3))`
+`r printTable('ecoli_FLQ_transitions')`
+<br>
+<br>
+<br>
+
+
+
+## MDR-*Pseudomonas* - Ceftolozane-tazobactam vs. Cetfazidime-avibactam
+These counts only include inpatient visits, but this represents ~25% of MDRPA isolates
+<br>
+`r printTable('MDRPA_CT_CZA_empiric')`
+`r printTable('MDRPA_CT_CZA_definitive')`
+`r printTable('MDRPA_CT_CZA_transitions')`
+<br>
+<br>
+<br>
+
+
+
+## *C. difficile*-associated disease - Vancomycin vs. Fidaxomycin
+<br>
+**Overall**
+`r printTable('Cdiff_VAN_FID')`
+**No other pathogen isolated**
+`r printTable('Cdiff_VAN_FID_noBug')`
+<br>
+<br>
+<br>
+
+
+
+## Ventilator-associated pneumonia - Pip-tazo vs. Cefepime vs. Meropenem
+<br>
+`r printTable('VAP_TZP_FEP_MER_empiric', 1:3)`
+`r printTable('VAP_TZP_FEP_MER_definitive', 1:3)`
+`r printTable('VAP_TZP_FEP_MER_transitions', NA)`
+<br>
+<br>
+<br>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>

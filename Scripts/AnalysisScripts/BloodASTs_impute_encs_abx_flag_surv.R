@@ -568,7 +568,7 @@ for (c in seq_along(chunks)) {
       }
    }
    total <- Sys.time() - start
-   print(total) # ~30 seconds each
+   print(total) # 23-24 seconds each
    
    empDF$FLAG[chunk] <- df$FLAG
 }
@@ -795,7 +795,6 @@ empDF <- empDF %>%
 # save wide format
 save(empDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE.Rdata')
 gc()
-print(Sys.time() - start)
 
 
 

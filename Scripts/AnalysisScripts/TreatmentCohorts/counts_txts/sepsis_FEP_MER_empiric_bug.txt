@@ -1,0 +1,5 @@
+EmpiricTherapy	n
+FEP	8015
+MER	1991
+both	515
+otherAbx	20991

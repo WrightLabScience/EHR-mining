@@ -5,9 +5,8 @@ start <- Sys.time()
 library(dplyr)
 library(tidyr)
 
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'AST_orders_clean.Rdata'))  # 3,074,667
-load(file = paste0(data_path_name, 'AST_results_clean.Rdata')) # 1,789,478
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/AST_orders_clean.Rdata')  # 3,074,667
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/AST_results_clean.Rdata') # 1,789,478
 
 astrDF <- astrDF %>% rename(RESULT_DAY = RESULT_DATE)
 astoDF <- astoDF %>% mutate(RESULT_DAY = as.Date(substr(RESULT_DATE, 1, 10)))
@@ -15,18 +14,17 @@ astoDF <- astoDF %>% mutate(RESULT_DAY = as.Date(substr(RESULT_DATE, 1, 10)))
 
 # first join on BUG for those orders where bug is present 
 astDF <- left_join(x = astrDF,
-                   y = astoDF %>% filter(!is.na(BUG)), # order HAS bug - 1,523,058
+                   y = astoDF %>% filter(!is.na(BUG)), # order HAS bug - 1/2
                    by = join_by(PERSON_ID, ORDER_PROC_ID, BUG, RESULT_DAY)) %>%
-   relocate(ORDER_DATE, RESULT_DATE, BLOOD, .after=ORDER_PROC_ID) %>%
-   relocate(RESULT_DAY, .after=RESULT_DATE)
+   relocate(ORDER_DATE, RESULT_DATE, RESULT_DAY, BLOOD, RESPIRATORY, .after=ORDER_PROC_ID)
 
-astDF %>% count(is.na(ORDER_DATE)) # 366,253 still need an order date
+astDF %>% count(is.na(ORDER_DATE)) # 334K still need an order date
 
 # then join without bug on the remaining records in ast that do not have an order_date
 # with those orders in asto that do not have a bug
 astrDF_unM <- astDF %>% # 366,253
    filter(is.na(ORDER_DATE)) %>%
-   select(!c(ORDER_DATE, RESULT_DATE, BLOOD))
+   select(!c(ORDER_DATE, RESULT_DATE, BLOOD, RESPIRATORY))
 astoDF_unM <- astoDF %>% # 1,545,343 <-- 1,551,609 (out of 3,074,667)
    filter(is.na(BUG)) %>% 
    select(-BUG) %>%
@@ -35,14 +33,13 @@ astoDF_unM <- astoDF %>% # 1,545,343 <-- 1,551,609 (out of 3,074,667)
 astDF_unM <- left_join(x = astrDF_unM,
                        y = astoDF_unM,
                        by = join_by(PERSON_ID, ORDER_PROC_ID, RESULT_DAY)) %>%
-   relocate(ORDER_DATE, RESULT_DATE, BLOOD, .after=ORDER_PROC_ID) %>%
-   relocate(RESULT_DAY, .after=RESULT_DATE)
+   relocate(ORDER_DATE, RESULT_DATE, RESULT_DAY, BLOOD, RESPIRATORY, .after=ORDER_PROC_ID)
 
-astDF_unM <- astDF_unM %>% filter(!is.na(ORDER_DATE)) # 356,225 (from 366,253)
-astDF_M   <- astDF     %>% filter(!is.na(ORDER_DATE)) # 1,443,587
+astDF_unM <- astDF_unM %>% filter(!is.na(ORDER_DATE))
+astDF_M   <- astDF     %>% filter(!is.na(ORDER_DATE))
 
-# combine initially matched and unmatched rows = 1,846,711
-astDF <- rbind(astDF_M, astDF_unM) # 1,850,758
+# combine initially matched and unmatched rows
+astDF <- rbind(astDF_M, astDF_unM)
 astDF <- astDF %>% arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
 
 rm(astDF_M, astDF_unM, astoDF_unM, astrDF_unM)
@@ -53,14 +50,14 @@ rm(astoDF, astrDF)
 # remove unnecessary variables that may obscure effective duplicates
 astDF <- astDF %>% 
    select(-ORDER_PROC_ID, -RESULT_DAY, -PATH_NAME) %>% 
-   distinct() # 1,835,382
+   distinct()
 
 
 ### If same bug, same AST, same day, take minimum order time and minimum result date-time
 # but first, how common is this?
-astDF <- astDF %>% # 1,835,382
-   mutate(ORDER_DAY = as.Date(substr(ORDER_DATE,1,10)),
-          RESULT_DAY = as.Date(substr(RESULT_DATE,1,10))) %>%
+astDF <- astDF %>%
+   mutate(ORDER_DAY = lubridate::as_date(ORDER_DATE),
+          RESULT_DAY = lubridate::as_date(RESULT_DATE)) %>%
    relocate(ORDER_DAY, RESULT_DAY, .after=RESULT_DATE)
 
 # if same order_day
@@ -98,12 +95,10 @@ rm(astDFm)
 
 
 nrow(astDF) 
-# 1,789,627 rows (if I do same result_day first, then same order_day)
-# 1,789,599 rows (if I do same order_day first, then same result_day)
 
 
 ###################################################################################
-save(astDF, file = paste0(data_path_name, 'ALL_clean_ASTs.Rdata'))
+save(astDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
 ###################################################################################
 print(Sys.time() - start) # ~3-5 minutes
 

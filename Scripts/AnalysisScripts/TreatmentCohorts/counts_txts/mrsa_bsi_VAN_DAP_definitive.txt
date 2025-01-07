@@ -1,0 +1,6 @@
+Therapy	n
+DAP	554
+VAN	1885
+both	163
+noAbx	734
+otherAbx	213

@@ -1,0 +1,17 @@
+EmpiricTherapy	DefinitiveTherapy	n
+neither	CT	275
+CT	CT	158
+neither	CZA	109
+CZA	CZA	73
+NA	CT	42
+CT	neither	40
+CT	NA	32
+CZA	neither	26
+CZA	NA	26
+NA	CZA	17
+CT	both	6
+CZA	CT	6
+both	CT	5
+CT	CZA	4
+CZA	both	4
+both	CZA	3

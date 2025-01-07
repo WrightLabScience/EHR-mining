@@ -71,3 +71,5 @@ Trimethoprim/sulfamethoxazole SXT Antifolate
 Trimethoprim TMP Diaminopyrimidines
 Telavancin TLV Glycopeptide
 Vancomycin VAN Glycopeptide
+Voriconazole VOR Antifungal
+Posaconazole POS Antifungal

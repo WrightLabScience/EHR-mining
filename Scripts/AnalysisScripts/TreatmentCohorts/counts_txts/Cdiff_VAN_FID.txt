@@ -1,0 +1,6 @@
+Therapy	n
+FID	169
+VAN	6848
+both	366
+no abx	8437
+other	1527

@@ -5,8 +5,7 @@ start <- Sys.time()
 library(dplyr)
 library(tidyr)
 
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'lab_micro_sens_all_vw.Rdata'))
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_sens_all_vw.Rdata')
 
 
 # simple prep
@@ -97,7 +96,7 @@ astrDF <- astrDF %>%
 astrDF <- astrDF %>% group_by(ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC)
 astrDFm <- astrDF %>% filter(n() > 1L)  # 16,461 (8,222 groups)
 astrDFm <- astrDFm %>% slice_max(STATUS) # 11,852 (8,222 groups) - still some with much later result_dates
-astrDFm <- astrDFm %>% slice_min(RESULT_DATE) # 8,2222
+astrDFm <- astrDFm %>% slice_min(RESULT_DATE) # 8,222
 astrDFm <- ungroup(astrDFm)
 astrDF <- rbind(astrDF %>% filter(n() == 1L) %>% ungroup(), astrDFm) %>%
    arrange(PERSON_ID, ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC) # 21,501,852
@@ -156,16 +155,27 @@ astrDF <- astrDF %>%
    mutate(ENT = BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Pseudomonas aeruginosa', 'Proteus mirabilis', 'Proteus penneri',
                            "Enterobacter cloacae", "Klebsiella oxytoca", "Serratia marcescens", "Enterobacter aerogenes", "Klebsiella aerogenes",
                            "Proteus vulgaris"),
-          ESBL_FLAG = grepl('esbl|extended spectrum beta lactamase', PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', PATH_NAME))
-astrDF <- astrDF %>%
-   mutate(ESBL = ENT & (ESBL_FLAG | CEFTRIAXONE == 1))
-astrDF <- astrDF %>%
+          ESBL_FLAG = grepl('esbl|extended spectrum beta lactamase', PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', PATH_NAME)) %>%
+   mutate(ESBL = ENT & (ESBL_FLAG | CEFTRIAXONE == 1)) %>%
    mutate(ESBL = case_when(
       is.na(ESBL) ~ 0,
       ESBL ~ 1,
       !ESBL ~ 0
    )) %>%
    select(-ENT, -ESBL_FLAG)
+
+bugs <- astrDF %>% count(BUG, sort=TRUE)
+
+astrDF <- astrDF %>%
+   mutate(EKR = BUG %in% c("Klebsiella pneumoniae", "Klebsiella oxytoca", "Klebsiella variicola", "Klebsiella species", "Klebsiella ozaenae", "Klebsiella ornithinolytica",
+                           'Escherichia coli', "Raoultella planticola", "Raoultella ornithinolytica", "Raoultella species")) %>%
+   mutate(ESBL2 = EKR & (CEFEPIME == 1L | CEFOTAXIME == 1L | CEFTRIAXONE == 1L | CEFTAZIDIME == 1L))
+
+w <- which(astrDF$EKR & astrDF$ESBL2 & astrDF$ESBL == 0L)
+astrDF$ESBL[w] <- 1
+astrDF <- astrDF %>% select(-EKR, -ESBL2)
+
+
 # 
 # en <- astrDF %>%
 #    filter(BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Proteus mirabilis', 'Proteus penneri',
