@@ -1,5 +1,4 @@
 source(file = '~/Desktop/EHR/EHR work/config_file.R')
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
 
 dth <- tbl(conn, in_schema('AMB_ETL', 'SENS_PATIENT_DEMO_VW')) %>%
    collect()
@@ -8,7 +7,7 @@ dth <- dth %>%
    arrange(PERSON_ID) %>%
    mutate(across(c(DOB, DEATH_DATE), ~ as.Date(., format='%m/%d/%Y')))
 
-save(dth, file = paste0(data_path_name, 'ALL_DEMO.Rdata'))
+save(dth, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_DEMO.Rdata')
 
 enc <- tbl(conn, in_schema('AMB_ETL', 'SENS_ENCOUNTER_VW')) %>%
    collect()

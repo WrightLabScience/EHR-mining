@@ -1,6 +1,12 @@
 library(dplyr)
 source('~/Desktop/WrightLab/UsefulRfuncs/newBarplotFxn.R')
 
+df <- astDF %>% filter(BLOOD)
+x <- sapply(df %>% select(CEFEPIME:ESBL), function(x) sum(x, na.rm=T))
+x <- x[!is.na(x)]
+data.frame(sort(x))
+
+
 
 ##### GET MRSA BSI ASTS #####
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
@@ -15,14 +21,23 @@ ast <- astDF %>%
       .by = c(PERSON_ID, ORDER_DAY)
    ) %>%
    mutate(RESULT_DAY = lubridate::as_date(RESULT_DATE)) %>%
-   filter(as.integer(RESULT_DAY - ORDER_DAY) <= 10L)
+   filter(as.integer(RESULT_DAY - ORDER_DAY) <= 8L) %>%
+   arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
 
-length(unique(ast$PERSON_ID)) # 3,468
+length(unique(ast$PERSON_ID)) # 3,452
 
 ast <- ast %>%
    group_by(PERSON_ID) %>%
-   mutate(DAYS_SINCE_PRV = as.integer(ORDER_DAY - lag(RESULT_DAY))) %>%
+   mutate(DAYS_SINCE_PRV = as.integer(RESULT_DAY - lag(ORDER_DAY))) %>%
+   mutate(RECUR = as.integer(lead(ORDER_DAY) - RESULT_DAY)) %>%
    ungroup()
+
+ast <- ast %>%
+   mutate(RECUR = case_when(
+      RECUR <= 10L | RECUR >= 60L ~ NA,
+      .default = RECUR
+   ))
+
 
 sum(ast$DAYS_SINCE_PRV <= 0, na.rm=T) / nrow(ast) # 27%
 sum(ast$DAYS_SINCE_PRV <= 30, na.rm=T) / nrow(ast) # 35.5%
@@ -31,6 +46,7 @@ plotBarplot(ast$DAYS_SINCE_PRV[ast$DAYS_SINCE_PRV < 90])
 
 ast <- ast %>% filter(is.na(DAYS_SINCE_PRV) | DAYS_SINCE_PRV >= 30L)
 ast %>% count(is.na(DAYS_SINCE_PRV)) # only 10% have any other MRSA BSI
+ast %>% count(is.na(RECUR)) # only 2.6% have a recurrence event in next 60 days
 
 resp <- astDF %>%
    filter(BUG == 'Staphylococcus aureus',
@@ -51,37 +67,148 @@ ast <- ast %>%
 ast %>% pull(RESP_CULT_DAY) %>% plotBarplot()
 ast %>% count(RESP_CULT_DAY)
 rm(astDF, resp); gc()
-##### END #####
+##### END ASTs #####
 
 
 ##### JOIN DEMO #####
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_DEMO.Rdata')
-censor_time <- 30
 ast <- ast %>%
    left_join(y = dth, by = join_by(PERSON_ID)) %>%
-   mutate(ORDER_DAY = as.Date(substr(ORDER_DATE,1,10))) %>%
-   mutate(
-      time = as.integer(DEATH_DATE - ORDER_DAY),
-      AGE = as.integer(ORDER_DAY - DOB) / 365
-   ) %>%
-   mutate(status = case_when(
-      is.na(time) | time > censor_time ~ 0,
-      .default = 1
-   )) %>%
-   mutate(time_censored = case_when(
-      is.na(time) | time > censor_time ~ censor_time,
-      .default = time
-   )) %>%
-   select(!c(PATIENT_STATUS, DEATH_DATE, DOB))
-ast %>% count(time)
-rm(censor_time, dth); gc()
-##### END #####
+   select(-PATIENT_STATUS)
+rm(dth); gc()
+##### END DEMO #####
+
+
+##### JOIN ABX ADMIN #####
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_CLEANED_2017_2023_AbxAdmin.Rdata')
+van_dap_abx_data <- abxDF %>% 
+   filter(PERSON_ID %in% unique(ast$PERSON_ID),
+          ABX %in% c('VANCOMYCIN', 'DAPTOMYCIN')) %>% # 108K
+   select(-END_DATE) %>%
+   distinct()
+
+# join ASTs + AbxAdmin
+ast_abx <- ast %>%
+   mutate(JOIN_START = ORDER_DAY - 14,
+          JOIN_END = ORDER_DAY + 7) %>%
+   left_join(y = van_dap_abx_data,
+             by = join_by(
+                PERSON_ID,
+                JOIN_START <= START_DAY,
+                JOIN_END >= START_DAY
+             )) %>%
+   mutate(ABX_DAY_REL_ORDER = as.integer(START_DAY - ORDER_DAY),
+          ABX_TIME_REL_ORDER = as.numeric(lubridate::as.duration(START_DATE - ORDER_DATE)) / 86400)# %>% pull(XT) %>% plotBarplot()
+
+# remove them
+ast_abx <- ast_abx %>% group_by(PERSON_ID, ORDER_DAY) %>% filter(!any(ABX_TIME_REL_ORDER < -1)) %>% ungroup() # 2,774
+
+# antibiotics are usualy started within 1 day of blood culture
+ast_abx %>% 
+   select(PERSON_ID, ORDER_DAY, ABX_TIME_REL_ORDER) %>% 
+   distinct() %>%
+   group_by(PERSON_ID, ORDER_DAY) %>% 
+   slice_min(ABX_TIME_REL_ORDER) %>% 
+   ungroup() %>% 
+   mutate(ABX_TIME_REL_ORDER_ROUNDED = round(ABX_TIME_REL_ORDER * 2) / 2) %>% 
+   count(ABX_TIME_REL_ORDER_ROUNDED)
+
+ast_abx <- ast_abx %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   mutate(FIRST_ABX_DAY_REL_ORDER = min(ABX_DAY_REL_ORDER),
+          FIRST_ABX_TIME_REL_ORDER = min(ABX_TIME_REL_ORDER),
+          FIRST_ABX_DATE = min(START_DATE),
+          FIRST_ABX_DAY = min(START_DAY)) %>%
+   ungroup() %>%
+   filter(FIRST_ABX_TIME_REL_ORDER < 2) %>% # first antibiotic must be administered within 48 hours of the MRSA blood culture draw
+   mutate(ABX_TIME_REL_FIRST_ABX = as.numeric(lubridate::as.duration(START_DATE - FIRST_ABX_DATE)) / 86400,
+          ABX_DAY_REL_FIRST_ABX = as.integer(START_DAY - FIRST_ABX_DAY)) %>%
+   filter(ABX_TIME_REL_FIRST_ABX <= 3L) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   filter(sum(unique(ABX_DAY_REL_FIRST_ABX) %in% 0:3) >= 2L) %>%
+   ungroup()
+
+
+# Define cohorts based on what happened days 0, 1, 2, and 3 in terms of treatment
+# just vancomycin in that period? van group
+# just daptomycin in that period? dap group
+# both? early switch? concurrent? d3dap group (or exclude)
+# when is the first day of abx?
+ast_abx <- ast_abx %>%
+   arrange(PERSON_ID, ORDER_DAY, START_DATE, desc(ABX)) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   mutate(ALL_DAP_TIMES_REL_ORDER = list(ABX_TIME_REL_ORDER[ABX == 'DAPTOMYCIN']),
+          ALL_VAN_TIMES_REL_ORDER = list(ABX_TIME_REL_ORDER[ABX == 'VANCOMYCIN']),
+          ALL_DAP_TIMES_REL_FIRST_ABX = list(ABX_TIME_REL_FIRST_ABX[ABX == 'DAPTOMYCIN']),
+          ALL_VAN_TIMES_REL_FIRST_ABX = list(ABX_TIME_REL_FIRST_ABX[ABX == 'VANCOMYCIN'])) %>%
+   ungroup() %>%
+   summarise(
+      TRT = paste(unique(ABX), collapse=','),
+      .by = c(PERSON_ID, ORDER_DAY, ORDER_DATE, RESULT_DAY, RESULT_DATE, DAYS_SINCE_PRV, RECUR, RESP_CULT_DAY, GENDER, DOB, DEATH_DATE,
+              # TIME_BW_ADMIT_ORDER, FACILITY, HospAcq, EARLY_CULTURE, NURSING_HOME, EMERGENCY_DEPT, LENGTH_OF_STAY,
+              ALL_DAP_TIMES_REL_ORDER, ALL_VAN_TIMES_REL_ORDER, ALL_DAP_TIMES_REL_FIRST_ABX, ALL_VAN_TIMES_REL_FIRST_ABX, 
+              FIRST_ABX_DAY_REL_ORDER, FIRST_ABX_TIME_REL_ORDER)
+   )
+ast_abx$FIRST_DAP_TIME_REL_ORDER <- sapply(ast_abx$ALL_DAP_TIMES_REL_ORDER, function(l) ifelse(length(l) == 0L, NA, min(l)))
+ast_abx$FIRST_VAN_TIME_REL_ORDER <- sapply(ast_abx$ALL_VAN_TIMES_REL_ORDER, function(l) ifelse(length(l) == 0L, NA, min(l)))
+ast_abx$FIRST_DAP_TIME_REL_FIRST_ABX <- sapply(ast_abx$ALL_DAP_TIMES_REL_FIRST_ABX, function(l) ifelse(length(l) == 0L, NA, min(l)))
+ast_abx$FIRST_VAN_TIME_REL_FIRST_ABX <- sapply(ast_abx$ALL_VAN_TIMES_REL_FIRST_ABX, function(l) ifelse(length(l) == 0L, NA, min(l)))
+
+# distribution of treatment strategies
+ast_abx %>% count(TRT)
+ast_abx <- ast_abx %>% filter(TRT != 'DAPTOMYCIN,VANCOMYCIN') # 2,723
+
+# put restrictions on this
+ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% count(round(FIRST_DAP_TIME_REL_FIRST_ABX), sort=TRUE)
+# this gives nearly a day between switching to DAP and potentially dying
+ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% summarise(max(FIRST_DAP_TIME_REL_FIRST_ABX))
+
+
+# how much overlap in time spent on VAN and DAP concurrently? and is the final VAN day LATER than the DAP day?
+df <- ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% select(ALL_VAN_TIMES_REL_FIRST_ABX, ALL_DAP_TIMES_REL_FIRST_ABX)
+keep <- logical(nrow(df))
+dap_switch_time <- rep(NA, nrow(df))
+for (i in seq_len(nrow(df))) {
+   van <- df$ALL_VAN_TIMES_REL_FIRST_ABX[[i]]
+   dap <- df$ALL_DAP_TIMES_REL_FIRST_ABX[[i]]
+   overlap <- min(c(max(van), max(dap))) - max(c(min(van), min(dap)))
+   if (max(dap) >= max(van) & overlap <= 1) {
+      keep[i] <- TRUE
+      dap_switch_time[i] <- min(dap)
+   }
+}
+w <- which(ast_abx$TRT == 'VANCOMYCIN,DAPTOMYCIN')
+ast_abx$DAP_SWITCH_TIME <- NA
+ast_abx$DAP_SWITCH_TIME[w] <- dap_switch_time
+ast_abx <- ast_abx[-w[!keep], ]
+rm(df, keep, i, van, dap, overlap, w, dap_switch_time)
+
+df <- ast_abx %>% select(!c(ALL_DAP_TIMES_REL_ORDER, ALL_VAN_TIMES_REL_ORDER, ALL_DAP_TIMES_REL_FIRST_ABX, ALL_VAN_TIMES_REL_FIRST_ABX))
+
+# did anyone receive anther anti-MRSA antibiotic in previous 2 weeks?
+anti_mrsa_abx <- abxDF %>% filter(ABX %in% c('LINEZOLID', 'CEFTAROLINE', 'SYNERCID', 'TELAVANCIN', 'DALBAVANCIN', 'ORITAVANCIN', 'RIFAMPIN')) %>% select(-END_DATE) %>% distinct()
+df <- df %>%
+   mutate(JOIN_START = ORDER_DAY + FIRST_ABX_DAY_REL_ORDER - 14,
+          JOIN_END = ORDER_DAY + FIRST_ABX_DAY_REL_ORDER - 1) %>% #count(JOIN_END >= ORDER_DAY) # watch out for this...
+   left_join(x = .,
+             y = anti_mrsa_abx,
+             multiple = 'first',
+             by = join_by(
+                PERSON_ID,
+                JOIN_START <= START_DAY,
+                JOIN_END >= START_DAY
+             )) %>%
+   mutate(OTHER_ABX = !is.na(ABX)) %>% #count(OTHER_ABX, TRT)
+   select(!c(JOIN_START, JOIN_END, ABX, START_DATE, START_DAY))
+
+rm(van_dap_abx_data, anti_mrsa_abx, abxDF); gc()
+##### END ABX #####
 
 
 ##### JOIN ENCOUNTERS #####
 if (FALSE) {
    source('~/Desktop/EHR/EHR work/config_file.R')
-   ids <- unique(ast$PERSON_ID)
+   ids <- unique(df$PERSON_ID)
    chunks <- mapply(FUN = ':',
                     seq(1, floor(length(ids) / 1000) * 1000 + 1, 1000),
                     c(seq(1000, floor(length(ids) / 1000) * 1000, 1000), length(ids)))
@@ -106,222 +233,104 @@ if (FALSE) {
    
    rm(combineOverlappingEncounters, chunk, chunks, ids)
 }
-
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/EncountersCleaned.Rdata')
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/EncountersRaw.Rdata')
+encs_og <- encs_og %>% arrange(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE)
 ###
+# df_og <- df
+# df <- df_og
 
 # join with asts
-df <- ast %>%
-   left_join(y = encs %>% mutate(BEFORE_ADMIT = ADMIT_DAY - 1),
+df <- df %>%
+   left_join(y = encs %>% mutate(BEFORE_ADMIT = ADMIT_DATE - 48/24 * 86400),
              by = join_by(
                 PERSON_ID,
-                between(ORDER_DAY, BEFORE_ADMIT, DISCHARGE_DAY)
+                between(ORDER_DATE, BEFORE_ADMIT, DISCHARGE_DATE)
              )) %>%
-   filter(!is.na(ADMIT_DAY)) %>% # lost 423
+   filter(!is.na(ADMIT_DAY)) %>% # 2662 --> 2642
    mutate(TIME_BW_ADMIT_ORDER = as.numeric(lubridate::as.duration(ORDER_DATE - ADMIT_DATE)) / 86400,
-          DAYS_BW_ADMIT_ORDER = as.integer(ORDER_DAY - ADMIT_DAY)) %>% #pull(DAYS_BW_ADMIT_ORDER) %>% plotBarplot()
-   mutate(HospAcq = TIME_BW_ADMIT_ORDER >= 2,
-          EARLY_CULTURE = TIME_BW_ADMIT_ORDER < -0.5 & DAYS_BW_ADMIT_ORDER < 0) %>%
-   select(-BEFORE_ADMIT, -DAYS_BW_ADMIT_ORDER, -ADMIT_DATE, -DISCHARGE_DATE, -ADMIT_DAY, -DISCHARGE_DAY)
+          DAYS_BW_ADMIT_ORDER = as.integer(ORDER_DAY - ADMIT_DAY)) %>%
+   mutate(
+      HOSP_ACQ = TIME_BW_ADMIT_ORDER >= 2,
+      EARLY_CULTURE = TIME_BW_ADMIT_ORDER < -0.5 & DAYS_BW_ADMIT_ORDER < 0,
+      NURSING_HOME = grepl('Nursing', ADMIT_SOURCE),
+      EMERGENCY_DEPT = grepl('ED|Emergency|Trauma|Urgent', ADMIT_TYPE)
+   ) %>%
+   select(!c(BEFORE_ADMIT, DAYS_BW_ADMIT_ORDER, ADMIT_DATE, DISCHARGE_DATE, ADMIT_DAY, DISCHARGE_DAY, ENCOUNTER_TYPE, COMBINED_ADJ,
+             ADMIT_SOURCE, ADMIT_TYPE))
 
-# some overlapping (or nearly so) encounters were combined and may have multiple facilities
+
+# some were transferred, get the admit and transfer facility separately
 df <- df %>%
-   rename(FACILITIES = FACILITY) %>%
-   left_join(y = encs_og %>% 
-                select(PERSON_ID, ADMIT_DAY, DISCHARGE_DAY, FACILITY) %>% 
-                mutate(BEFORE_ADMIT = ADMIT_DAY - 1), 
-             by = join_by(PERSON_ID, 
-                          between(ORDER_DAY, BEFORE_ADMIT, DISCHARGE_DAY))) %>%
-   distinct() %>%
+   mutate(FACILITY_og = ifelse(grepl(',', FACILITY), NA, FACILITY)) %>%
+   select(-FACILITY) %>%
+   mutate(ABX_START_TIME = ORDER_DATE + 86400 * FIRST_ABX_TIME_REL_ORDER) %>%
+   mutate(ABX_END_TIME = ABX_START_TIME + 3 * 86400) %>%
+   # joining to get facility
+   left_join(y = encs_og %>% select(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE, FACILITY),
+             by = join_by(
+                PERSON_ID,
+                ABX_START_TIME <= DISCHARGE_DATE,
+                ABX_END_TIME >= ADMIT_DATE
+             )) %>%
    group_by(PERSON_ID, ORDER_DAY) %>%
-   slice_max(DISCHARGE_DAY) %>%
+   mutate(TRANSFER_TIME = case_when(
+      length(unique(FACILITY)) > 1L ~ as.numeric(lubridate::as.duration(last(ADMIT_DATE) - ABX_START_TIME)) / 86400,
+      .default = NA
+   )) %>%
+   mutate(FACILITY_ADMIT = first(FACILITY),
+          FACILITY_TRANSFER = last(FACILITY)) %>%
    ungroup() %>%
-   select(-ADMIT_DAY, -DISCHARGE_DAY, -BEFORE_ADMIT)
-any(is.na(df$FACILITY))
+   select(-ADMIT_DATE, -DISCHARGE_DATE, -FACILITY) %>%
+   distinct() %>% 
+   select(-FACILITY_og)
+
+
+
+df <- df %>%
+   mutate(ABX_START_DAY = lubridate::as_date(ABX_START_TIME),
+          ABX_END_DAY = lubridate::as_date(ABX_END_TIME)) %>%
+   mutate(
+      AGE = as.integer(ABX_START_DAY - DOB) / 365,
+      time = as.integer(DEATH_DATE - ABX_START_DAY),
+      status = ifelse(is.na(time) | time > 30L, 0L, 1L)
+   ) %>%
+   mutate(time_censored = ifelse(is.na(time) | time > 30L, 31, time)) %>%
+   filter(time_censored > 3L)
 
 
 # hospital-acquired MRSA bacteremia = death-sentence!
-df %>% summarise(n=n(), sum(time < 30, na.rm=T) / n, .by=HospAcq)
-df %>% summarise(n=n(), sum(time < 4, na.rm=T) / n, .by=HospAcq)
-df %>% filter(is.na(time) | time > 3) %>% summarise(n=n(), sum(time < 30, na.rm=T) / n, .by=HospAcq)
-sum(df$HospAcq, na.rm=T) / nrow(df) # 16% hospital-acquired
+df %>% summarise(n=n(), sum(time < 30, na.rm=T) / n, .by=HOSP_ACQ)
+df %>% summarise(n=n(), sum(time < 14, na.rm=T) / n, .by=HOSP_ACQ)
+sum(df$HOSP_ACQ, na.rm=T) / nrow(df) # 12% hospital-acquired
 
 # admit to ED first?
-df %>% count(ENCOUNTER_TYPE, sort=TRUE) # basically all inpatients, some from "maternity" or "nursery"
-df %>% filter(grepl('maternity|nursery', ENCOUNTER_TYPE, ignore.case=TRUE)) %>% count(ENCOUNTER_TYPE)
-df %>% count(ADMIT_TYPE, sort=TRUE)
-data.frame(sort(table(unlist(strsplit(df$ADMIT_TYPE, ', '))), decreasing=TRUE))
-data.frame(sort(table(unlist(strsplit(df$ADMIT_SOURCE, ', '))), decreasing=TRUE))
-
-df$NURSING_HOME <- grepl('Nursing', df$ADMIT_SOURCE) # much higher mortality rate, nearly double 30-day
-df %>% summarise(n = n(), sum(time < 30, na.rm=T) / n, .by=NURSING_HOME)
-df$EMERGENCY_DEPT <- grepl('ED|Emergency|Trauma|Urgent', df$ADMIT_TYPE) # 4% higher 30-day mortality rate
-df %>% summarise(n = n(), sum(time < 30, na.rm=T) / n, .by=EMERGENCY_DEPT)
-
 df %>%
    summarise(n = n(), 
              ec = sum(EARLY_CULTURE) / n,
-             ha = sum(HospAcq) / n,
+             ha = sum(HOSP_ACQ) / n,
              nh = sum(NURSING_HOME) / n,
-             .by=FACILITY) %>%
-   filter(n > 50L) %>%
+             .by=FACILITY_TRANSFER) %>%
+   filter(n > 35L) %>%
    arrange(desc(ec)) # UPMCWIL is doube/triple most other facilities
 
 # remove unnecessary variables
-ast <- df %>% select(PERSON_ID, ORDER_DATE, RESULT_DATE, ORDER_DAY, RESULT_DAY, DAYS_SINCE_PRV, GENDER, time, time_censored, 
-                    status, AGE, TIME_BW_ADMIT_ORDER, FACILITY, HospAcq, EARLY_CULTURE, NURSING_HOME, EMERGENCY_DEPT, RESP_CULT_DAY)
+df <- df %>% 
+   select(!c(DOB, DEATH_DATE, FIRST_DAP_TIME_REL_ORDER, FIRST_VAN_TIME_REL_ORDER, FIRST_DAP_TIME_REL_FIRST_ABX, FIRST_VAN_TIME_REL_FIRST_ABX))
 ##### END #####
 
 
 
-save(ast, file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/DF_before_AbxAdmin.Rdata')
+save(df, file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/DF_asts_encs_abx.Rdata')
 ##########################################################################################################
 library(dplyr)
 source('~/Desktop/WrightLab/UsefulRfuncs/newBarplotFxn.R')
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/DF_before_AbxAdmin.Rdata')
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/DF_asts_encs_abx.Rdata')
 
 
-
-##### JOIN ABX ADMIN #####
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_CLEANED_2017_2023_AbxAdmin.Rdata')
-abxDF <- abxDF %>% 
-   filter(PERSON_ID %in% unique(ast$PERSON_ID),
-          ABX %in% c('VANCOMYCIN', 'DAPTOMYCIN')) %>% # 108K
-   select(-END_DATE) %>%
-   distinct()
-
-# join ASTs + AbxAdmin
-ast_abx <- ast %>%
-   mutate(JOIN_START = ORDER_DAY - 30,
-          JOIN_END = ORDER_DAY + 30) %>%
-   left_join(y = abxDF,
-             by = join_by(
-                PERSON_ID,
-                JOIN_START <= START_DAY,
-                JOIN_END >= START_DAY
-             )) %>%
-   mutate(X = as.integer(START_DAY - ORDER_DAY),
-          XT = as.numeric(lubridate::as.duration(START_DATE - ORDER_DATE)) / 86400)# %>% pull(XT) %>% plotBarplot()
-
-# remove cases without enough VAN or DAP before AST: 3,407
-ast_abx <- ast_abx %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   mutate(N7 = sum(unique(X) %in% 4:7),
-          N3 = sum(unique(X) %in% 0:3)) %>%
-   filter(N3 >= 2L) %>% # 3,407 --> 2,883
-   ungroup()
-
-# remove them
-ast_abx <- ast_abx %>% group_by(PERSON_ID, ORDER_DAY) %>% filter(!any(X %in% -3:-14)) %>% ungroup() # 2,774
-
-
-# Define cohorts based on what happened days 0, 1, 2, and 3 in terms of treatment
-# just vancomycin in that period? van group
-# just daptomycin in that period? dap group
-# both? early switch? concurrent? d3dap group (or exclude)
-# when is the first day of abx?
-ast_abx <- ast_abx %>%
-   arrange(PERSON_ID, ORDER_DAY, START_DATE, desc(ABX)) %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   mutate(ALL_DAP_TIMES = list(XT[X %in% -1:3 & ABX == 'DAPTOMYCIN']),
-          ALL_VAN_TIMES = list(XT[X %in% -1:3 & ABX == 'VANCOMYCIN']),,
-          FIRST_DAP_DAY = list(X[X %in% -1:3 & ABX == 'DAPTOMYCIN']),
-          FIRST_VAN_DAY = list(X[X %in% -1:3 & ABX == 'VANCOMYCIN']),
-          NUM_VAN_DAYS = sum(ABX[X %in% -1:3] == 'VANCOMYCIN'),
-          NUM_DAP_DAYS = sum(ABX[X %in% -1:3] == 'DAPTOMYCIN'),
-          NUM_ABX_DAYS = sum(unique(X) %in% -1:3)) %>%
-   ungroup() %>%
-   mutate(NUM_VAN_DOSES = lengths(ALL_VAN_TIMES),
-          NUM_DAP_DOSES = lengths(ALL_DAP_TIMES)) %>%
-   summarise(FIRST_ABX_DAY = min(X[X %in% -1:3]),
-             FIRST_ABX_TIME = min(XT[X %in% -1:3]),
-             TRT = paste(unique(ABX[X %in% -1:3]), collapse=','),
-             TRT7 = paste(unique(ABX[X %in% -1:7]), collapse=','),
-             .by = c(PERSON_ID, ORDER_DATE, RESULT_DATE, ORDER_DAY, RESULT_DAY, N3, N7, FIRST_DAP_DAY, FIRST_VAN_DAY, NUM_VAN_DOSES, NUM_DAP_DOSES, 
-                     ALL_DAP_TIMES, ALL_VAN_TIMES, NUM_VAN_DAYS, NUM_DAP_DAYS, NUM_ABX_DAYS, GENDER, time, AGE, status, time_censored,
-                     FACILITY, DAYS_SINCE_PRV, HospAcq, EARLY_CULTURE, NURSING_HOME, EMERGENCY_DEPT, RESP_CULT_DAY, TIME_BW_ADMIT_ORDER))
-ast_abx$FIRST_DAP_DAY  <- sapply(ast_abx$FIRST_DAP_DAY, function(l) ifelse(length(l) == 0L, NA, min(l)))
-ast_abx$FIRST_VAN_DAY  <- sapply(ast_abx$FIRST_VAN_DAY, function(l) ifelse(length(l) == 0L, NA, min(l)))
-ast_abx$FIRST_DAP_TIME <- sapply(ast_abx$ALL_DAP_TIMES, function(l) ifelse(length(l) == 0L, NA, min(l)))
-ast_abx$FIRST_VAN_TIME <- sapply(ast_abx$ALL_VAN_TIMES, function(l) ifelse(length(l) == 0L, NA, min(l)))
-
-# distribution of treatment strategies
-ast_abx %>% count(TRT)
-ast_abx %>% count(TRT7)
-ast_abx %>% count(TRT, TRT7)
-
-ast_abx <- ast_abx %>% filter(TRT != 'DAPTOMYCIN,VANCOMYCIN') # 2,723
-
-# put restrictions on this
-ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% count(FIRST_VAN_DAY, FIRST_DAP_DAY, sort=TRUE)
-# how much time before switch
-ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% mutate(X = FIRST_DAP_TIME - FIRST_VAN_TIME) %>% pull(X) %>% hist(breaks=24*4)
-
-
-# how much overlap in time spent on VAN and DAP concurrently? and is the final VAN day LATER than the DAP day?
-df <- ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% select(ALL_VAN_TIMES, ALL_DAP_TIMES)
-keep <- logical(nrow(df))
-dap_switch_time_r <- dap_switch_time_a <- rep(NA, nrow(df))
-for (i in seq_len(nrow(df))) {
-   van <- df$ALL_VAN_TIMES[[i]]
-   dap <- df$ALL_DAP_TIMES[[i]]
-   overlap <- min(c(max(van), max(dap))) - max(c(min(van), min(dap)))
-   if (max(dap) >= max(van) & overlap <= 1) {
-      keep[i] <- TRUE
-      dap_switch_time_r[i] <- min(dap) - min(van)
-      dap_switch_time_a[i] <- min(dap)
-   }
-}
-w <- which(ast_abx$TRT == 'VANCOMYCIN,DAPTOMYCIN')
-ast_abx$DAP_SWITCH_TIME_A <- ast_abx$DAP_SWITCH_TIME_R <- NA
-ast_abx$DAP_SWITCH_TIME_A[w] <- dap_switch_time_a
-ast_abx$DAP_SWITCH_TIME_R[w] <- dap_switch_time_r
-ast_abx <- ast_abx[-w[!keep], ]
-rm(df, keep, i, van, dap, overlap, w, dap_switch_time_a, dap_switch_time_r)
-
-par(mfrow=c(2,2))
-ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% pull(FIRST_VAN_TIME) %>% hist(xlim=c(-1.5, 4), main='First VAN time')
-ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% pull(FIRST_DAP_TIME) %>% hist(xlim=c(-1.5, 4), main='First DAP time')
-ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% pull(DAP_SWITCH_TIME_A) %>% hist(xlim=c(-1.5, 4), main='Relative to culture')
-ast_abx %>% filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>% pull(DAP_SWITCH_TIME_R) %>% hist(xlim=c(-1.5, 4), main='Relative to first VAN')
-
-ast_abx %>%
-   filter(TRT == 'VANCOMYCIN,DAPTOMYCIN') %>%
-   count(DAP_SWITCH_TIME_R <= 1.5, DAP_SWITCH_TIME_A <= 1.5)
-ast_abx <- ast_abx %>%
-   rename(DAP_SWITCH_TIME = DAP_SWITCH_TIME_R) %>%
-   select(-DAP_SWITCH_TIME_A)
-
-
-ast_abx %>% summarise(n = n(), 
-                      ndth = sum(time_censored < 30), 
-                      resp = sum(!is.na(RESP_CULT_DAY)) / n,
-                      EARLY_CULTURE = sum(EARLY_CULTURE, na.rm=T) / n, 
-                      ED = sum(EMERGENCY_DEPT, na.rm=T) / n,
-                      HOSP_ACQ = sum(HospAcq, na.rm=T) / n, 
-                      NURSE_HOME = sum(NURSING_HOME) / n,
-                      FEMALE = sum(GENDER == 'FEMALE') / n,
-                      FIRST_ABX_DAY_2_orLater = sum(FIRST_ABX_DAY >= 2) / n,
-                      fdth = ndth / n,
-                      mean(FIRST_ABX_TIME),
-                      .by=TRT)
-
-ast_abx %>% 
-   mutate(RESP = !is.na(RESP_CULT_DAY)) %>%
-   summarise(n = n(),
-             d30 = sum(time_censored < 30) / n, 
-             .by=c(RESP, TRT)) %>%
-   arrange(TRT, RESP)
-
-ast_abx <- ast_abx %>%
-   select(PERSON_ID, ORDER_DAY, ORDER_DATE, FIRST_ABX_DAY, DAP_SWITCH_TIME, FIRST_VAN_TIME, FIRST_DAP_TIME, TRT, GENDER, AGE, status, time, time_censored, FACILITY,
-          DAYS_SINCE_PRV, HospAcq, EARLY_CULTURE, NURSING_HOME, EMERGENCY_DEPT, RESP_CULT_DAY, TIME_BW_ADMIT_ORDER)
-##### END #####
 
 
 ##### JOIN DX_CODES #####
-df <- ast_abx
 if (FALSE) {
    source('~/Desktop/EHR/EHR work/config_file.R')
    ids <- unique(df$PERSON_ID)
@@ -331,17 +340,18 @@ if (FALSE) {
       print(chunk[1])
       dx <- rbind(
          dx,
-         tbl(conn, in_schema('AMB_ETL', 'LAB_SENS_DX_VW')) %>% 
+         tbl(conn, in_schema('AMB_ETL', 'LAB_SENS_DX_VW')) %>%
             filter(PERSON_ID %in% local(ids[chunk]),
                    lubridate::year(DX_FROM_DATE) %in% 2017:2023) %>%
             collect()
       )
    }
    dx <- dx %>%
-      mutate(DX_DATE = lubridate::date(DX_FROM_DATE),
-             CODE_DESCRIPTION = tolower(CODE_DESCRIPTION)) %>% 
+      rename(DX_DATE = DX_FROM_DATE) %>%
+      mutate(CODE_DESCRIPTION = tolower(CODE_DESCRIPTION)) %>% 
       select(PERSON_ID, DX_DATE, DX_CODE, CODE_DESCRIPTION) %>% 
-      distinct()
+      distinct() %>% 
+      arrange(PERSON_ID, DX_DATE, DX_CODE, CODE_DESCRIPTION)
    rm(result, chunks, chunk, ids)
    save(dx, file='~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/Diagnoses.Rdata')
 }
@@ -358,17 +368,15 @@ length(intersect(dx$PERSON_ID, df$PERSON_ID)) # have codes for everyone AT SOME 
 # join and re-format 1 row per infection, flag for each comorbidity
 #### WITHIN WEEK BEFORE BLOOD CULTURE
 dfx <- df %>%
-   mutate(JOIN_START = ORDER_DAY + FIRST_ABX_DAY - 7,
-          JOIN_END = ORDER_DAY + FIRST_ABX_DAY) %>%
+   mutate(JOIN_START = ABX_START_TIME - 7 * 86400) %>%
    left_join(y = dx,
              by = join_by(
                 PERSON_ID,
                 JOIN_START <= DX_DATE,
-                JOIN_END >= DX_DATE
+                ABX_START_TIME >= DX_DATE
              )) %>%
-   select(-JOIN_START, -JOIN_END) %>%
-   mutate(X = as.integer(DX_DATE - ORDER_DAY),
-          CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
+   select(-JOIN_START) %>%
+   mutate(CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
    group_by(PERSON_ID, ORDER_DAY) %>%
    mutate(
       SepticShock_1w = any(grepl('with septic shock', CODE_DESCRIPTION)),
@@ -381,24 +389,22 @@ dfx <- df %>%
       Respiratory_1w = any(grepl('^J', DX_CODE) & grepl('infect', CODE_DESCRIPTION))
    ) %>%
    ungroup() %>%
-   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION, -X) %>%
+   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION) %>%
    distinct()
 dfx %>% summarise(n(), across(SepticShock_1w:Respiratory_1w, ~ sum(.) / n()), .by=TRT)
 
 
 #### WITHIN MONTH OF BLOOD CULTURE
 dfx <- dfx %>%
-   mutate(JOIN_START = ORDER_DAY - 30,
-          JOIN_END = (ORDER_DAY + FIRST_ABX_DAY)) %>%
+   mutate(JOIN_START = ABX_START_TIME - 30 * 86400) %>%
    left_join(y = dx,
              by = join_by(
                 PERSON_ID,
                 JOIN_START <= DX_DATE,
-                JOIN_END >= DX_DATE
+                ABX_START_TIME >= DX_DATE
              )) %>%
-   select(-JOIN_START, -JOIN_END) %>%
-   mutate(X = as.integer(DX_DATE - ORDER_DAY),
-          CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
+   select(-JOIN_START) %>%
+   mutate(CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
    group_by(PERSON_ID, ORDER_DAY) %>%
    mutate(
       PulmCircDis_1m = any(grepl('^I26|^I27|^I28\\.[089]', DX_CODE)),
@@ -408,24 +414,22 @@ dfx <- dfx %>%
       Malignancy_1m = any(grepl('^C[01][0-9]|^C2[0-6]|^C3[01234789]|^C4[013]|^C4[5-9]|^C5[0-8]|^C6[0-9]|^C7[0-6]|^C8[123458]|^C9[0-7]', DX_CODE)),
    ) %>%
    ungroup() %>%
-   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION, -X) %>%
+   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION) %>%
    distinct()
 dfx %>% summarise(across(PulmCircDis_1m:Malignancy_1m, ~ sum(.) / n()), .by=TRT)
 
 
 #### WITHIN 2 YEARS OF BLOOD CULTURE
 dfx <- dfx %>%
-   mutate(JOIN_START = ORDER_DAY - 730,
-          JOIN_END = ORDER_DAY + FIRST_ABX_DAY) %>%
+   mutate(JOIN_START = ABX_START_TIME - 730 * 86400) %>%
    left_join(y = dx,
              by = join_by(
                 PERSON_ID,
                 JOIN_START <= DX_DATE,
-                JOIN_END >= DX_DATE
+                ABX_START_TIME >= DX_DATE
              )) %>%
-   select(-JOIN_START, -JOIN_END) %>%
-   mutate(X = as.integer(DX_DATE - ORDER_DAY),
-          CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
+   select(-JOIN_START) %>%
+   mutate(CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
    group_by(PERSON_ID, ORDER_DAY) %>%
    mutate(
       OsteoChronic = any(grepl('M86', DX_CODE) & grepl('chronic', CODE_DESCRIPTION)),
@@ -464,30 +468,56 @@ dfx <- dfx %>%
       Smoking = any(grepl('nicotine', CODE_DESCRIPTION))
    ) %>%
    ungroup() %>%
-   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION, -X) %>%
+   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION) %>%
    distinct()
 dfx %>% summarise(across(OsteoChronic:Smoking, ~ sum(.) / n()), .by=TRT)
+
+
+### POST-TREATMENT
+dfx <- dfx %>%
+   left_join(y = dx,
+             by = join_by(
+                PERSON_ID,
+                ABX_START_TIME <= DX_DATE,
+                ABX_END_TIME >= DX_DATE
+             )) %>%
+   mutate(CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   mutate(
+      Post_SepticShock = any(grepl('with septic shock', CODE_DESCRIPTION)),
+      Post_Sepsis = any(grepl('sepsis', CODE_DESCRIPTION)), 
+      Post_AKI = any(grepl('^N17.9', DX_CODE)), 
+      Post_Endocarditis = any(grepl('^I33.0', DX_CODE)),
+      Post_Osteomyelitis = any(grepl('^M86', DX_CODE) & !grepl('chronic', CODE_DESCRIPTION)),
+      Post_Cellulitis = any(grepl('^L03.90', DX_CODE)),
+      Post_Peritonitis = any(grepl('^K65.9', DX_CODE)),
+      Post_Respiratory = any(grepl('^J', DX_CODE) & grepl('infect', CODE_DESCRIPTION))
+   ) %>%
+   ungroup() %>%
+   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION) %>%
+   distinct()
 ##### END #####
 
 
 ##### JOIN OTHER ISOLATES #####
 load(file='~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
 otherBugs <- astDF %>%
-   filter(lubridate::year(ORDER_DAY) %in% 2017:2023) %>%
+   filter(lubridate::year(ORDER_DAY) %in% 2017:2023,
+          PERSON_ID %in% unique(dfx$PERSON_ID)) %>%
    mutate(MRSA_BSI = BUG == 'Staphylococcus aureus' & OXACILLIN == 1L & BLOOD) %>%
    filter(!MRSA_BSI) %>%
-   select(PERSON_ID, ORDER_DAY, BUG, ESBL, VANCOMYCIN) %>%
+   select(PERSON_ID, ORDER_DATE, RESULT_DATE, BUG, ESBL, VANCOMYCIN) %>%
    distinct() %>%
-   rename(oORDER_DAY = ORDER_DAY)
+   rename(oRESULT_DATE = RESULT_DATE,
+          oORDER_DATE = ORDER_DATE)
 
 dfx <- dfx %>%
-   mutate(JOIN_START = ORDER_DAY - 7,
-          JOIN_END = ORDER_DAY + FIRST_ABX_DAY) %>%
+   mutate(JOIN_START = ABX_START_TIME - 30 * 86400) %>%
    left_join(y = otherBugs,
              by = join_by(
                 PERSON_ID,
-                JOIN_START <= oORDER_DAY,
-                JOIN_END >= oORDER_DAY
+                JOIN_START <= oRESULT_DATE,
+                ABX_END_TIME >= oRESULT_DATE
              )) %>%
    group_by(PERSON_ID, ORDER_DAY) %>%
    mutate(NumOtherIsolates = lengths(list(BUG)),
@@ -496,9 +526,29 @@ dfx <- dfx %>%
           ESBLbug = any(ESBL == 1L)) %>%
    ungroup() %>%
    mutate(across(c(VRE, MSSA, ESBLbug), ~ ifelse(is.na(.), FALSE, .))) %>%
-   select(-ESBL, -VANCOMYCIN, -BUG, -JOIN_START, -JOIN_END, -oORDER_DAY) %>%
+   select(-ESBL, -VANCOMYCIN, -BUG, -JOIN_START, -oRESULT_DATE, -oORDER_DATE) %>%
    rename(ESBL = ESBLbug) %>%
    distinct()
+
+dfx <- dfx %>%
+   left_join(
+      y = otherBugs %>% rename(POST_ESBL = ESBL),
+      by = join_by(
+         PERSON_ID,
+         ABX_START_TIME <= oORDER_DATE,
+         ABX_END_TIME >= oORDER_DATE
+      )
+   ) %>%
+   group_by(PERSON_ID, ORDER_DAY) %>%
+   mutate(POST_VRE = any(grepl('Enterococcus', BUG) & VANCOMYCIN == 1L),
+          POST_MSSA = any(BUG == 'Staphylococcus aureus'),
+          POST_ESBLbug = any(POST_ESBL == 1L)) %>%
+   ungroup() %>%
+   mutate(across(c(POST_VRE, POST_MSSA, POST_ESBLbug), ~ ifelse(is.na(.), FALSE, .))) %>%
+   select(-POST_ESBL, -VANCOMYCIN, -BUG, -oRESULT_DATE, -oORDER_DATE) %>%
+   rename(POST_ESBL = POST_ESBLbug) %>%
+   distinct()
+
 rm(astDF, otherBugs); gc()
 ##### END #####
 
@@ -549,7 +599,7 @@ micDF <- vanDF %>%
 
 dfx <- dfx %>% left_join(micDF, by=join_by(PERSON_ID, ORDER_DAY))
 
-rm(astrDF, micDF, vanDF); gc()
+rm(micDF, vanDF); gc()
 ##### END #####
 
 
@@ -557,10 +607,83 @@ rm(astrDF, micDF, vanDF); gc()
 dfx %>%
    mutate(RESP = !is.na(RESP_CULT_DAY)) %>%
    summarise(n = n(),
-             d30 = sum(time_censored < 30) / n(),
+             d30 = sum(time < 30) / n(),
              .by = c(TRT, RESP)) %>%
    tidyr::pivot_wider(id_cols=TRT, values_from=d30, names_from=RESP)
 dfx <- dfx %>% filter(is.na(RESP_CULT_DAY)) %>% select(-RESP_CULT_DAY)
+
+site_names <- c("CHP" = 'Childrens', "UPMCALT" = 'Altoona',  "UPMCBED" = 'Bedford', 
+                "UPMCCHA" = 'Chatauqua', "UPMCEAS" = 'East', "UPMCHAM" = 'Hamot', 
+                "UPMCHZN" = 'Horizon', "UPMCJAM" = 'Jameson', "UPMCMCK" = 'McKeesport', 
+                "UPMCMER" = 'Mercy', "UPMCMUN" = '', "UPMCMWH" = 'Magee-W', 
+                "UPMCNOR" = 'Northwest', "UPMCPAS" = 'Passavant', "UPMCPUH" = 'Presbyterian', 
+                "UPMCSHY" = 'Shadyside', "UPMCSMH" = 'St. Margaret', 
+                "UPMCSOL" = 'SOL', "UPMCSUN" = 'SUN',  'UPMCLOC' = 'LOC', 'UPMCMUN' = 'MUN',
+                "UPMCWIL" = 'Williamsport')
+site_groups <- list(
+   academic = c('Mercy', 'Presbyterian', 'Shadyside', 'Magee-W'),
+   regional = c('Hamot', 'Williamsport', 'Jameson', 'Altoona'),
+   community = c('Passavant', 'East', 'McKeesport', 'St. Margaret'),
+   rural = c('Bedford', 'Northwest', 'Horizon', 'Chatauqua')
+)
+save(site_names, file='~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/UPMC_site_names.Rdata')
+save(site_groups, file='~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/UPMC_site_groups.Rdata')
+
+dfx <- dfx %>%
+   mutate(
+      TRT = case_when(
+         TRT == 'VANCOMYCIN' ~ 'VAN',
+         TRT == 'DAPTOMYCIN' ~ 'iDAP',
+         TRT == 'VANCOMYCIN,DAPTOMYCIN' ~ 'sDAP'
+      )
+   ) %>%
+   mutate(FEMALE = GENDER == 'FEMALE',
+          year = factor(lubridate::year(ORDER_DAY)),
+          FACILITY = unname(site_names[FACILITY_ADMIT]),
+          FACILITY_TRANSFER = unname(site_names[FACILITY_TRANSFER])) %>%
+   select(-FACILITY_ADMIT, -GENDER)
+
+
+dfx$CATEGORY <- NA
+group_indices_admit <- sapply(site_groups, function(x) which(dfx$FACILITY %in% x))
+for (i in seq_along(group_indices_admit)) {
+   dfx$CATEGORY[group_indices_admit[[i]]] <- names(site_groups)[i]
+}
+dfx$CATEGORY_TRANSFER <- NA
+group_indices_transfer <- sapply(site_groups, function(x) which(dfx$FACILITY_TRANSFER %in% x))
+for (i in seq_along(group_indices_transfer)) {
+   dfx$CATEGORY_TRANSFER[group_indices_transfer[[i]]] <- names(site_groups)[i]
+}
+rm(group_indices_admit, group_indices_transfer, i, site_names, site_groups)
+
+dfx$TRANSFER <- !is.na(dfx$TRANSFER_TIME)
+
+
+
+dfx <- dfx %>% filter(!is.na(CATEGORY) & !is.na(CATEGORY_TRANSFER))
+dfx <- dfx %>%
+   mutate(RECENT_MRSA = !is.na(DAYS_SINCE_PRV),
+          RECENT_MRSA_1y = !is.na(DAYS_SINCE_PRV) & DAYS_SINCE_PRV <= 365L)
+dfx <- dfx %>%
+   mutate(VAN_MIC = case_when(
+      VAN_MIC == 0.75 ~ 0.5,
+      VAN_MIC == 1.5 ~ 1,
+      is.na(VAN_MIC) ~ 1,
+      .default = VAN_MIC
+   )) %>%
+   mutate(VAN_MIC_2 = VAN_MIC >= 2)
+
+
+# add lab values
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/LabValues_DF_MRSA.Rdata')
+
+dfx <- dfx %>%
+   left_join(
+      x = .,
+      y=lab_vals, 
+      by=join_by(PERSON_ID, ORDER_DAY)
+   )
+
 
 
 save(dfx, file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSA_BSI_DAP_VAN.Rdata')
@@ -573,8 +696,33 @@ save(dfx, file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/
 
 
 
+library(dplyr)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSA_BSI_DAP_VAN.Rdata')
+df <- dfx; rm(dfx)
+vars <- names(df)[!names(df) %in% c('PERSON_ID', 'ORDER_DAY', 'ORDER_DATE', 'DAP_SWITCH_TIME', 'FIRST_VAN_TIME', 'FIRST_DAP_TIME',
+                                    'FACILITY', 'FACILITY_TRANSFER', 'TRT', 'TRTs', 'DAYS_SINCE_PRV', 'VAN_MIC_2', 'VAN_MIC',
+                                    grep('^POST_', names(df), value=TRUE, ignore.case=TRUE), 
+                                    'CATEGORY_TRANSFER', 'RESULT_DAY', 'RESULT_DATE',
+                                    'FIRST_ABX_DAY_REL_ORDER', 'FIRST_ABX_TIME_REL_ORDER', 'LENGTH_OF_STAY', 'TRANSFER_TIME',
+                                    'RECUR', 'ABX_START_TIME', 'ABX_END_TIME', 'ABX_START_DAY', 'ABX_END_DAY', 'TRANSFER', 'year')]
+df <- df %>% filter(TRT != 'sDAP') %>% select(TRT, time, status, !!vars)
+
+df %>%
+   mutate()
+   glm(formula = as.formula(paste0('time')))
 
 
+
+write.csv(df, file='~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSAbact_dataset.csv', quote = FALSE, row.names = FALSE)
+
+write.table(df %>% 
+               select(TRT, AGE, time_censored, Sepsis_1w, NURSING_HOME) %>% 
+               mutate(DAP = as.integer(TRT == 'iDAP'),
+                      across(.cols = c(Sepsis_1w, NURSING_HOME),
+                             .fns = ~ as.integer(.))) %>% 
+               rename(time = time_censored) %>%
+               select(-TRT),
+            file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSAbact_datset_mini.txt', quote=FALSE, row.names=FALSE, sep='\t')
 
 
 
@@ -593,84 +741,22 @@ source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/ProcessTableOneFxn.R')
 cex <- 1.5
 par(cex.main=cex, cex.axis=cex, cex.lab=cex, cex=cex)
 
-site_names <- c("CHP" = 'Childrens', "UPMCALT" = 'Altoona',  "UPMCBED" = 'Bedford', 
-                "UPMCCHA" = 'Chatauqua', "UPMCEAS" = 'East', "UPMCHAM" = 'Hamot', 
-                "UPMCHZN" = 'Horizon', "UPMCJAM" = 'Jameson', "UPMCMCK" = 'McKeesport', 
-                "UPMCMER" = 'Mercy', "UPMCMUN" = '', "UPMCMWH" = 'Magee-W', 
-                "UPMCNOR" = 'Northwest', "UPMCPAS" = 'Passavant', "UPMCPUH" = 'Presbyterian', 
-                "UPMCSHY" = 'Shadyside', "UPMCSMH" = 'St. Margaret', 
-                "UPMCSOL" = 'SOL', "UPMCSUN" = 'SUN',  'UPMCLOC' = 'LOC',
-                "UPMCWIL" = 'Williamsport')
-site_groups <- list(
-   academic = c('Mercy', 'Presbyterian', 'Shadyside', 'Magee-W'),
-   regional = c('Hamot', 'Williamsport', 'Jameson', 'Altoona'),
-   community = c('Passavant', 'East', 'McKeesport', 'St. Margaret'),
-   rural = c('Bedford', 'Northwest', 'Horizon', 'Chatauqua')
-)
 
-col_vec <- c('VAN' = "#0000FF", 'iDAP' = "#ef5675", 'sDAP' = "#ffa600", 
+col_vec <- c('VAN' = "#0000FF", 'iDAP' = "#ef5675", 'sDAP' = "#ffa600",  'i1DAP' = '#ef5655',
              'allDAP' = '#FF0000', 'e1DAP' = '#ffa688', 'e2DAP' = '#ffa688', 'i2DAP' = '#ef5655',
              'eVAN' = '#1111aa', 'lVAN' = '#5555FF')
-col_vec2 <- c('VAN' = "#0000FF22", 'iDAP' = "#ef567572", 'sDAP' = "#ffa60066", 
+col_vec2 <- c('VAN' = "#0000FF22", 'iDAP' = "#ef567572", 'sDAP' = "#ffa60066", 'i1DAP' = '#ef565588',
               'allDAP' = '#FF0000', 'e1DAP' = '#ffa68866', 'e2DAP' = '#ffa68866', 'i2DAP' = '#ef565588',
               'eVAN' = '#1111aa', 'lVAN' = '#5555FF')
 
 site_cols <- setNames(c('#000000', '#0000FF', '#FF0000', '#00FF00'), c('academic', 'community', 'regional', 'rural'))
 
-dfx <- dfx %>%
-   mutate(
-      TRT = case_when(
-         TRT == 'VANCOMYCIN' ~ 'VAN',
-         TRT == 'DAPTOMYCIN' ~ 'iDAP',
-         TRT == 'VANCOMYCIN,DAPTOMYCIN' ~ 'sDAP'
-      )
-   ) %>%
-   mutate(TRTs = ifelse(TRT == 'VAN', 'VAN', 'DAP'),
-          FEMALE = GENDER == 'FEMALE',
-          year = factor(lubridate::year(ORDER_DAY)),
-          FACILITY = site_names[FACILITY]) %>%
-   select(-GENDER)
-
-
-dfx$CATEGORY <- NA
-group_indices <- sapply(site_groups, function(x) which(dfx$FACILITY %in% x))
-for (i in seq_along(group_indices)) {
-   dfx$CATEGORY[group_indices[[i]]] <- names(site_groups)[i]
-}
-
-dfx %>% count(CATEGORY)
-dfx %>% count(CATEGORY, FACILITY)
-dfx <- dfx %>% filter(!is.na(CATEGORY))
-dfx <- dfx %>% filter(is.na(time) | time > 3L)
-
-dfx <- dfx %>%
-   mutate(RECENT_MRSA = !is.na(DAYS_SINCE_PRV),
-          RECENT_MRSA_1y = !is.na(DAYS_SINCE_PRV) & DAYS_SINCE_PRV <= 365L)# %>%
-# mutate(DAYS_SINCE_PRV = case_when(
-#    is.na(DAYS_SINCE_PRV) ~ -1 * 365 * length(2017:2023),
-#    .default = -1 * DAYS_SINCE_PRV
-# ))
 
 dfx %>%
    #select(VAN_MIC, TRT) %>% #table() %>% barplot(beside=TRUE)
    summarise(n = n(),
              mic2 = sum(VAN_MIC_2, na.rm=T) / n,
              missing = sum(is.na(VAN_MIC)) / n,
-             mean(VAN_MIC, na.rm=T),
-             median(VAN_MIC, na.rm=T),
-             .by = TRT)
-
-dfx <- dfx %>%
-   mutate(VAN_MIC = case_when(
-      VAN_MIC == 0.75 ~ 0.5,
-      VAN_MIC == 1.5 ~ 1,
-      is.na(VAN_MIC) ~ 1,
-      .default = VAN_MIC
-   )) %>%
-   mutate(VAN_MIC_2 = VAN_MIC >= 2)
-dfx %>%
-   summarise(n = n(),
-             mic2 = sum(VAN_MIC_2, na.rm=T) / n,
              mean(VAN_MIC, na.rm=T),
              median(VAN_MIC, na.rm=T),
              .by = TRT)
@@ -684,10 +770,7 @@ rm(t)
 
 
 
-# cleanup variables
-rm(group_indices, site_groups, i, site_names)
-
-
+dfx %>% summarise(n=n(), sum(time_censored < 30) / n, .by=TRANSFER)
 
 
 dfx %>%
@@ -696,6 +779,12 @@ dfx %>%
              d30 = sum(time_censored < 30) / n,
              .by = c(CATEGORY, FACILITY)) %>%
    arrange(CATEGORY, desc(DAP))
+dfx %>%
+   summarise(n = n(),
+             DAP = sum(TRT %in% c('iDAP', 'sDAP')) / n,
+             d30 = sum(time_censored < 30) / n,
+             .by = c(CATEGORY_TRANSFER, FACILITY_TRANSFER)) %>%
+   arrange(CATEGORY_TRANSFER, desc(DAP))
 t <- dfx %>%
    summarise(n = n(),
              VAN = sum(TRT == 'VAN'),
@@ -704,10 +793,6 @@ t <- dfx %>%
              DAP = sum(TRT %in% c('iDAP', 'sDAP')),
              .by = c(CATEGORY, FACILITY)) %>%
    arrange(CATEGORY, FACILITY)
-write.csv(t, 
-          file='~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/TreatmentCohorts/MRSA_bacteremia/facility_category_counts.csv',
-          quote = FALSE,
-          row.names = FALSE)
 rm(t)
 
 dfx %>% summarise(n = n(),
@@ -725,60 +810,66 @@ dfx %>% summarise(n = n(),
 
 dfx %>% select(CATEGORY, TRT) %>% table()
 
-pcx <- plr <- numeric(180L)
+pcx <- plr <- plg <- numeric(180L)
 for (i in seq_along(pcx)) {
    print(i)
    censor_time <- i
-   df <- dfx %>%
+   x <- dfx %>%
       filter(TRT != 'sDAP') %>%
-      select(TRT, time, time_censored, status, AGE) %>%
+      select(TRT, time_censored, time, status, AGE) %>%
       mutate(status = ifelse(is.na(time) | time > censor_time, 0, 1)) %>%
       mutate(time_censored = ifelse(is.na(time) | time > censor_time, censor_time, time))
-   cox <- df %>%
+   cox <- x %>%
       coxph(Surv(time_censored, status) ~ TRT + AGE, data=.) %>%
       summary()
    pcx[i] <- cox$coefficients['TRTVAN', 'Pr(>|z|)']
-   lr <- df %>%
+   lr <- x %>%
       glm(formula=time_censored ~ TRT + AGE, data=.) %>%
       summary()
    plr[i] <- lr$coefficients['TRTVAN', 'Pr(>|t|)']
+   lg <- x %>%
+      mutate(d30 = time < censor_time) %>%
+      glm(formula=d30 ~ TRT + AGE, data=., family=binomial(link='logit')) %>%
+      summary()
+   plg[i] <- lg$coefficients['TRTVAN', 'Pr(>|z|)']
 }
 plot(NA, type='l', log='y', ylim=c(0.01, 1), xlim=c(4,180), main='P-values on trt variable under coxph and linear regression')
 abline(h = 0.05, lty=2)
 abline(v = c(14, 30, 45), lty=2)
-lines(pcx)
-lines(plr, col='blue')
-legend('bottomright', legend=c('coxph', 'linear'), col=c('black', 'blue'))
-rm(pcx, plr, i, df, cox, lr)
+lines(pcx, lwd=cex)
+lines(plr, lwd=cex, col='blue')
+lines(plg, lwd=cex, col='red')
+legend('bottomright', legend=c('coxph', 'linear', 'logistic'), lty=1, lwd=cex, col=c('black', 'blue', 'red'))
+rm(pcx, plr, i, x, cox, lr, plg, lg)
 
 
 
 
 # when is the first abx administered relative to blood culture??
-s <- seq(-2, 4.5, 0.25)
-setupPlot <- function(h, main='', leg='') {
-   plot(NA, xlim=range(s), ylim=c(0, h), main=main, xlab='Days (relative to culture)', ylab='Density',
-        cex.lab=cex, cex.axis=cex, cex.main=cex)
-   abline(v=0, lty=3, lwd=1)
-   legend('topright', legend=leg, col=col_vec[leg], lwd=cex*1.75, cex=cex)
-}
-drawDensityLines <- function(v, col) {
-   lines(density(v), col=col, lwd=cex*1.75)
-   abline(v = median(v), col=col, lwd=cex*1.75, lty=3)
-}
-par(mfrow=c(3,2), mar=c(5,4,2,2), mgp = c(2, 0.75, 0), tck=-0.015)
-plot.new();plot.new();plot.new()
-setupPlot(h=2.2, main='First ABX admin', leg=c('VAN', 'sDAP', 'iDAP'))
-drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'VAN'], col_vec['VAN'])
-drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'sDAP'], col_vec['sDAP'])
-drawDensityLines(dfx$FIRST_DAP_TIME[dfx$TRT == 'iDAP'], col_vec['iDAP'])
-setupPlot(h=2.2, main='First VAN admin', leg=c('VAN', 'sDAP'))
-drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'VAN'], col_vec['VAN'])
-drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'sDAP'], col_vec['sDAP'])
-setupPlot(h=0.75, main='First DAP admin', leg=c('sDAP', 'iDAP'))
-drawDensityLines(dfx$FIRST_DAP_TIME[dfx$TRT == 'sDAP'], col_vec['sDAP'])
-drawDensityLines(dfx$FIRST_DAP_TIME[dfx$TRT == 'iDAP'], col_vec['iDAP'])
-rm(s, setupPlot, drawDensityLines)
+# s <- seq(-2, 4.5, 0.25)
+# setupPlot <- function(h, main='', leg='') {
+#    plot(NA, xlim=range(s), ylim=c(0, h), main=main, xlab='Days (relative to culture)', ylab='Density',
+#         cex.lab=cex, cex.axis=cex, cex.main=cex)
+#    abline(v=0, lty=3, lwd=1)
+#    legend('topright', legend=leg, col=col_vec[leg], lwd=cex*1.75, cex=cex)
+# }
+# drawDensityLines <- function(v, col) {
+#    lines(density(v), col=col, lwd=cex*1.75)
+#    abline(v = median(v), col=col, lwd=cex*1.75, lty=3)
+# }
+# par(mfrow=c(3,2), mar=c(5,4,2,2), mgp = c(2, 0.75, 0), tck=-0.015)
+# plot.new();plot.new();plot.new()
+# setupPlot(h=2.2, main='First ABX admin', leg=c('VAN', 'sDAP', 'iDAP'))
+# drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'VAN'], col_vec['VAN'])
+# drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'sDAP'], col_vec['sDAP'])
+# drawDensityLines(dfx$FIRST_DAP_TIME[dfx$TRT == 'iDAP'], col_vec['iDAP'])
+# setupPlot(h=2.2, main='First VAN admin', leg=c('VAN', 'sDAP'))
+# drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'VAN'], col_vec['VAN'])
+# drawDensityLines(dfx$FIRST_VAN_TIME[dfx$TRT == 'sDAP'], col_vec['sDAP'])
+# setupPlot(h=0.75, main='First DAP admin', leg=c('sDAP', 'iDAP'))
+# drawDensityLines(dfx$FIRST_DAP_TIME[dfx$TRT == 'sDAP'], col_vec['sDAP'])
+# drawDensityLines(dfx$FIRST_DAP_TIME[dfx$TRT == 'iDAP'], col_vec['iDAP'])
+# rm(s, setupPlot, drawDensityLines)
 
 
 
@@ -958,7 +1049,7 @@ plotKP(df = dfx %>%
 
 
 
-cohorts <- c('VAN vs. iDAP', 'VAN vs. i2DAP', 'VAN vs. sDAP', 'VAN vs. allDAP', 'VAN vs. e1DAP', 'VAN vs. e2DAP', 'VAN vs. i2DAP')#, 'iDAP vs. sDAP', 'eVAN vs. lVAN')
+cohorts <- c('VAN vs. iDAP', 'VAN vs. i1DAP', 'VAN vs. i2DAP', 'VAN vs. sDAP', 'VAN vs. allDAP', 'VAN vs. e1DAP', 'VAN vs. e2DAP')#, 'iDAP vs. sDAP', 'eVAN vs. lVAN')
 
 for (cohort in cohorts) {
    print(cohort)
@@ -983,15 +1074,19 @@ for (cohort in cohorts) {
       df <- dfx %>%
          filter(TRT == 'VAN' | (TRT == 'sDAP' & DAP_SWITCH_TIME < 2)) %>%
          mutate(TRT = ifelse(TRT == 'VAN', 'VAN', 'e2DAP'))
-   } else if (trt[2] == 'i2DAP') {
+   } else if (trt[2] == 'i1DAP') {
       df <- dfx %>%
          filter(TRT %in% c('VAN', 'iDAP') | (TRT == 'sDAP' & DAP_SWITCH_TIME < 1)) %>%
+         mutate(TRT = ifelse(TRT == 'VAN', 'VAN', 'i1DAP'))
+   } else if (trt[2] == 'i2DAP') {
+      df <- dfx %>%
+         filter(TRT %in% c('VAN', 'iDAP') | (TRT == 'sDAP' & DAP_SWITCH_TIME < 2)) %>%
          mutate(TRT = ifelse(TRT == 'VAN', 'VAN', 'i2DAP'))
    } else {
       df <- dfx %>% filter(TRT %in% trt)
    }
    df <- df %>%
-      select(!c(FIRST_ABX_DAY, time)) %>% 
+      select(-time) %>% 
       rename(time = time_censored) %>%
       mutate(TRT = as.factor(TRT))
    
@@ -1029,14 +1124,17 @@ for (cohort in cohorts) {
       
       # visualize covariate imbalance
       vars <- names(df)[!names(df) %in% c('PERSON_ID', 'ORDER_DAY', 'ORDER_DATE', 'DAP_SWITCH_TIME', 'FIRST_VAN_TIME', 'FIRST_DAP_TIME',
-                                          'status', 'FACILITY', 'TRT', 'TRTs', 'time', 'DAYS_SINCE_PRV')]
+                                          'status', 'FACILITY', 'FACILITY_TRANSFER', 'TRT', 'TRTs', 'time', 'DAYS_SINCE_PRV', 'VAN_MIC_2', 'VAN_MIC',
+                                          grep('^POST_', names(df), value=TRUE, ignore.case=TRUE), 'CATEGORY_TRANSFER', 'RESULT_DAY', 'RESULT_DATE',
+                                          'FIRST_ABX_DAY_REL_ORDER', 'FIRST_ABX_TIME_REL_ORDER', 'LENGTH_OF_STAY', 'TRANSFER_TIME',
+                                          'RECUR', 'ABX_START_TIME', 'ABX_END_TIME', 'ABX_START_DAY', 'ABX_END_DAY', 'TRANSFER', 'year')]
       tOg <- tableone::CreateTableOne(vars=vars, strata='TRT', data=df, smd=TRUE)
       table1 <- processTableOne(tOg)
       drawTableOne(table1, trt)
       #print(table1[table1$pvals < 0.1,])
       mtext(text=paste0(trt[2], ' (n = ', sum(df$TRT == trt[2]), '), ', trt[1], ' (n = ', sum(df$TRT == trt[1]), ')'), outer=TRUE, at=0.5, cex=cex-0.3, font=2)
       
-      ## FACILITY CATEGORY SPECIFIC PRESCRIBING PATTERNS
+      ## FACILITY_ADMIT CATEGORY SPECIFIC PRESCRIBING PATTERNS
       tables1 <- list()
       tables1$overall <- table1
       
@@ -1058,20 +1156,23 @@ for (cohort in cohorts) {
       
       
       # Propensity adjusted odds ratio estimates
-      vars <- unique(c('AGE', 'CATEGORY', 'year', 'FEMALE', 'Obesity', 'RECENT_MRSA', 'RECENT_MRSA_1y',  # very general
+      vars <- unique(c('AGE', 'CATEGORY', 'year', 'FEMALE', 'Obesity', 'RECENT_MRSA_1y',  # very general
                        'Endocarditis_1w', 'Respiratory_1w', 'AKI_1w', 'Cellulitis_1w', 'Osteomyelitis_1w', 'Peritonitis_1w', 'Sepsis_1w', 'SepticShock_1w', # acute clinical
                        rownames(table1[abs(table1$diffs) > 0.1, ]),
                        rownames(table1[table1$pvals < 0.1, ]),
                        conf_vars))
-      write.table(x = vars, quote = FALSE, row.names = FALSE, col.names = FALSE,
-                  file = paste0('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/TreatmentCohorts/MRSA_bacteremia/conf_vars_', trt[2], '.txt'))
+      vars <- grep('^POST_', vars, invert=TRUE, value=TRUE)
+      # write.table(x = vars, quote = FALSE, row.names = FALSE, col.names = FALSE,
+      #             file = paste0('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/TreatmentCohorts/MRSA_bacteremia/conf_vars_', trt[2], '.txt'))
       
       df <- df %>% mutate(trt1 = as.integer(TRT == trt[1]))
+      missing_vars <- names(which(sapply(df[vars], function(x) sum(is.na(x))) > 0))
+      df <- df %>% mutate(across(!!missing_vars, ~ tidyr::replace_na(., mean(., na.rm=T))))
       formula <- as.formula(paste0('Surv(time, status) ~ trt1 + ', paste(vars, collapse=' + ')))
       # setup plot area
       ORplot <- function(trt) {
          par(mar=c(5, 4, 2.75, 3.5))
-         plot(NA, xlim=c(0.5,2.5), ylim=c(1/5, 5), log='y', xaxt='n', xlab='', ylab='', yaxt='n', main='30-day cox proportional hazards', cex.main=cex)
+         plot(NA, xlim=c(0.5,4.5), ylim=c(1/5, 5), log='y', xaxt='n', xlab='', ylab='', yaxt='n', main='30-day cox proportional hazards', cex.main=cex)
          title(ylab='Hazard ratio', line=2.5, cex.lab=cex)
          title(xlab='Model', line=3.5, cex.lab=cex)
          axis(side=2, at=c(1/4, 1/2, 1, 2, 3, 4), labels=as.character(c(1/4, 1/2, 1, 2, 3, 4)), las=1)
@@ -1106,8 +1207,16 @@ for (cohort in cohorts) {
       points(x=2, y=exp(est), pch=16, cex=cex)
       arrows(x0=2, y0=exp(est-se), y1=exp(est+se), code=3, angle=90, length=0.05, lwd=cex)
       
-      #coefs_raw <- glm(formula=paste0('time ~ TRT + ', paste(vars, collapse=' + ')), data=df) %>% summary()
-      #coefs_adj <- glm(formula=paste0('time ~ TRT + ', paste(vars, collapse=' + ')), data=df, weights=prop_weights) %>% summary()
+      coefs_lin_raw <- glm(formula=paste0('time ~ trt1 + ', paste(vars, collapse=' + ')), data=df) %>% summary()
+      coefs_lin_adj <- glm(formula=paste0('time ~ trt1 + ', paste(vars, collapse=' + ')), data=df, weights=prop_weights) %>% summary()
+      print(coefs_lin_raw$coefficients['trt1', 'Pr(>|t|)'])
+      print(coefs_lin_adj$coefficients['trt1', 'Pr(>|t|)'])
+      
+      coefs_log_raw <- df %>% mutate(d30 = time < 30) %>% glm(formula=paste0('d30 ~ trt1 + ', paste(vars, collapse=' + ')), data=., family=binomial()) %>% summary()
+      coefs_log_adj <- df %>% mutate(d30 = time < 30) %>% glm(formula=paste0('d30 ~ trt1 + ', paste(vars, collapse=' + ')), data=., family=binomial(), weights=prop_weights) %>% summary()
+      print(coefs_log_raw$coefficients['trt1', 'Pr(>|z|)'])
+      print(coefs_log_adj$coefficients['trt1', 'Pr(>|z|)'])
+      
       df <- df %>% select(-prop_score, -prop_weights, -trt1)
       
       # facility specifics

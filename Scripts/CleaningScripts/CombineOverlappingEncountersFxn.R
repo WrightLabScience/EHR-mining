@@ -1,7 +1,7 @@
 combineOverlappingEncounters <- function(encs) {
-   if (!any(names(encs) == 'ADMIT_DAY')) 
+   if (!any(names(encs) == 'ADMIT_DAY'))
       encs$ADMIT_DAY <- lubridate::as_date(encs$ADMIT_DATE)
-   if (!any(names(encs) == 'DISCHARGE_DAY')) 
+   if (!any(names(encs) == 'DISCHARGE_DAY'))
       encs$DISCHARGE_DAY <- lubridate::as_date(encs$DISCHARGE_DATE)
    
    encs <- encs %>% arrange(PERSON_ID, ADMIT_DATE)
@@ -64,7 +64,8 @@ combineOverlappingEncounters <- function(encs) {
          FACILITY = paste(FACILITY, collapse=', '),
          ADMIT_SOURCE = paste(ADMIT_SOURCE, collapse=', '),
          ADMIT_TYPE = paste(ADMIT_TYPE, collapse=', '),
-         .by = c(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE, ADMIT_DAY, DISCHARGE_DAY, COMBINED_ADJ)) # ~134K rows
+         .by = c(PERSON_ID, ADMIT_DATE, DISCHARGE_DATE, ADMIT_DAY, DISCHARGE_DAY, COMBINED_ADJ)) %>% # ~134K rows
+      mutate(LENGTH_OF_STAY = as.numeric(lubridate::as.duration(DISCHARGE_DATE - ADMIT_DATE)) / 86400)
    
    return(encs)
 }

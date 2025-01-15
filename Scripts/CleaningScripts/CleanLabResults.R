@@ -330,18 +330,10 @@ rm(lab1, lab2)
 
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSA_BSI_DAP_VAN.Rdata')
 dfx <- dfx %>%
-   select(PERSON_ID, ORDER_DAY, ORDER_DATE, TRT, time, FIRST_ABX_DAY, FIRST_VAN_TIME, FIRST_DAP_TIME) %>%
-   mutate(TRT = case_when(
-      TRT == 'VANCOMYCIN' ~ 'VAN', 
-      TRT == 'DAPTOMYCIN' ~ 'iDAP', 
-      TRT == 'VANCOMYCIN,DAPTOMYCIN' ~ 'sDAP'
-   )) %>%
-   mutate(ABX_START_TIME = case_when(
-      TRT == 'iDAP' ~ ORDER_DATE + 86400 * FIRST_DAP_TIME,
-      .default = ORDER_DATE + 86400 * FIRST_VAN_TIME
-   )) %>%
-   mutate(JOIN_START = ORDER_DAY + FIRST_ABX_DAY - 7,
-          JOIN_END = ORDER_DAY + FIRST_ABX_DAY + 5)
+   select(PERSON_ID, ORDER_DAY, ORDER_DATE, TRT, time, FIRST_ABX_DAY_REL_ORDER, FIRST_ABX_TIME_REL_ORDER) %>%
+   mutate(ABX_START_TIME = ORDER_DATE + 86400 * FIRST_ABX_TIME_REL_ORDER) %>%
+   mutate(JOIN_START = ORDER_DAY + FIRST_ABX_DAY_REL_ORDER - 7,
+          JOIN_END = ORDER_DAY + FIRST_ABX_DAY_REL_ORDER + 5)
 
 # prep labs
 labsS <- labs %>%
@@ -552,22 +544,16 @@ labsS <- labs %>%
    count(PERSON_ID, ORDER_DAY, ORDER_DATE, RESULT_DATE, RESULT_VALUE, LAB) %>%
    rename(LAB_ORDER_DAY = ORDER_DAY)
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSA_BSI_DAP_VAN.Rdata')
+dfx <- dfx %>% select(!contains('POST'))
+dfx <- dfx %>% select(!contains('PRE'))
 
 # join all labs with rest of data
 df <- dfx %>%
    select(-time) %>% rename(time = time_censored) %>%
-   select(PERSON_ID, ORDER_DAY, ORDER_DATE, TRT, time, status, FIRST_ABX_DAY, FIRST_VAN_TIME, FIRST_DAP_TIME) %>%
-   mutate(TRT = case_when(
-      TRT == 'VANCOMYCIN' ~ 'VAN', 
-      TRT == 'DAPTOMYCIN' ~ 'iDAP', 
-      TRT == 'VANCOMYCIN,DAPTOMYCIN' ~ 'sDAP'
-   )) %>%
-   mutate(ABX_START_TIME = case_when(
-      TRT == 'iDAP' ~ ORDER_DATE + 86400 * FIRST_DAP_TIME,
-      .default = ORDER_DATE + 86400 * FIRST_VAN_TIME
-   )) %>%
-   mutate(JOIN_START = ORDER_DAY + FIRST_ABX_DAY - 7,
-          JOIN_END = ABX_START_TIME + 86400) %>%
+   select(PERSON_ID, ORDER_DAY, ORDER_DATE, TRT, time, status, FIRST_ABX_DAY_REL_ORDER, FIRST_ABX_TIME_REL_ORDER, CATEGORY, AGE, FEMALE, year) %>%
+   mutate(ABX_START_TIME = ORDER_DATE + 86400 * FIRST_ABX_TIME_REL_ORDER) %>%
+   mutate(JOIN_START = ABX_START_TIME - 86400 * 3,
+          JOIN_END = ABX_START_TIME + 86400 * 3) %>%
    left_join(
       x = .,
       y = labsS %>% select(!c(ORDER_DATE, LAB_ORDER_DAY)) %>% filter(!grepl('^ATYP_', LAB)),
@@ -582,151 +568,314 @@ df <- dfx %>%
 
 df %>% pull(X) %>% hist(breaks=300)
 
-# who is missing all labs data?
-t <- df %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   slice_min(X, with_ties=FALSE) %>%
-   ungroup() %>%
-   mutate(hasLabs = !is.na(X)) %>%
-   select(TRT, hasLabs) %>%
-   table()
-t[,'FALSE'] / rowSums(t)
-fisher.test(t)
-fisher.test(t[-1, ])
-fisher.test(t[-2, ])
-fisher.test(t[-3, ])
-# sDAP has highest rate of total missingness at 8%, then VAN at 5.5%, then iDAP at 2.7%
-# somewhat significant (except iDAP vs sDAP)
 
-t <- df %>%
-   filter(is.na(X) | X <= 4/24) %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   slice_min(X, with_ties=FALSE) %>%
-   ungroup() %>%
-   mutate(hasLabs = !is.na(X)) %>%
-   select(TRT, hasLabs) %>%
-   table()
-t[,'FALSE'] / rowSums(t) # if only consider first 4 hours after first abx admin, missingness only SLIGHTLY higher (1% each, except iDAP because waits so long for abx)
-rm(t)
-
-
-# which labs have multiple values per person in the 36 hours before abx?
 df2 <- df %>%
-   filter(is.na(X) | (X >= -36/24)) %>%
-   select(PERSON_ID, ORDER_DAY, TRT, time, status, FIRST_ABX_DAY, LAB, RESULT_VALUE, X) %>%
+   mutate(FLAG = case_when(
+      !is.na(X) & X <= 0 ~ 'PRE',
+      !is.na(X) & X > 0 ~ 'POST',
+      .default = NA
+   )) %>%
+   mutate(LAB = case_when(
+      FLAG == 'PRE' ~ paste0('PRE_', LAB),
+      FLAG == 'POST' ~ paste0('POST_', LAB),
+      .default = NA
+   )) %>%
+   select(PERSON_ID, ORDER_DAY, TRT, time, status, FIRST_ABX_DAY_REL_ORDER, LAB, RESULT_VALUE, X, FLAG) %>%
    distinct()
 
-df2 %>%
-   group_by(PERSON_ID, ORDER_DAY, LAB) %>% # 63,036 groups (105,402 rows)
-   filter(n() > 1L) %>% # 26,617 groups (68,983 rows)
-   ungroup() %>%
-   select(PERSON_ID, ORDER_DAY, LAB) %>%
-   distinct() %>%
-   count(LAB, sort=TRUE) %>%
-   print(n=25L)
-
-# which of rthese repeated values are the most variable and are therefore sensitive to bias by median, mean, etc.
-var <- df2 %>%
-   #group_by(PERSON_ID, ORDER_DAY, LAB) %>% # 63,036 groups (105,402 rows)
-   #filter(n() > 1L) %>% # 26,617 groups (68,983 rows)
-   #ungroup() %>%
-   summarise(
-      n = n(),
-      sd = sd(RESULT_VALUE),
-      range = abs(diff(range(RESULT_VALUE))),
-      .by = c(PERSON_ID, ORDER_DAY, TRT, LAB)
-   )
-
-var %>%
-   filter(LAB == 'GLUCOSE') %>% #pull(range) %>% #count(n >= 3L) # nearly half
-   pull(n) %>% plotBarplot()
-rm(var)
-
+df2 %>% group_by(PERSON_ID, ORDER_DAY)
 
 df2 <- df2 %>%
-   mutate(Xn = X + 1.5) %>%
-   mutate(weight = 0.5 + (0.5 / (60/24)) * Xn) %>%
+   mutate(Xn = ifelse(FLAG == 'PRE', X + 3, X)) %>%
+   mutate(weight = case_when(
+      FLAG == 'PRE' ~ 0.5 + (0.5 / 3) * Xn,
+      FLAG == 'POST' ~ 1,
+      .default = NA
+   )) %>%
    summarise(
       MEAN = mean(RESULT_VALUE),
       WMEAN = weighted.mean(RESULT_VALUE, weight),
-      .by = c(PERSON_ID, ORDER_DAY, TRT, LAB, time, status, FIRST_ABX_DAY)
+      .by = c(PERSON_ID, ORDER_DAY, TRT, LAB, time, status, FIRST_ABX_DAY_REL_ORDER, FLAG)
    )
+
+df2 %>% filter(FLAG == 'POST') %>% summarise(abs(diff(range(WMEAN - MEAN))))
+df2 %>% filter(FLAG == 'PRE') %>% summarise(abs(diff(range(WMEAN - MEAN))))
 
 dfw <- df2 %>%
    select(-MEAN) %>%
    rename(VALUE = WMEAN) %>%
    tidyr::pivot_wider(
-      id_cols = c(PERSON_ID, ORDER_DAY, TRT),
+      id_cols = c(PERSON_ID, ORDER_DAY, TRT, time, status, FIRST_ABX_DAY_REL_ORDER),
       values_from = VALUE,
       names_from = LAB
    ) %>%
    select(-`NA`)
 
 
-crl <- sapply(dfw %>% select(!c(PERSON_ID, ORDER_DAY, TRT, time, status, FIRST_ABX_DAY)), function(x) sum(!is.na(x)) / length(x))
-crl <- sort(crl)
 
-crp <- apply(dfw %>% select(names(crl)), 1, function(x) sum(!is.na(x)) / length(x))
-
-{
-   par(mfrow=c(1,2), mar=c(3, 2, 3, 1), mgp=c(2, 0.5, 0), tck=-0.015, oma=c(0,11,0,0))
-   b <- barplot(crl, horiz=TRUE, names.arg=NA, xlim=c(0,1), main='By lab', xlab='Completion rate')
-   abline(v = c(0.2, 0.8), lty=3)
-   text(x=-0.02, y=b, adj=1, labels=names(crl), xpd=NA)
+keep_labs <- character()
+for (flag in c('PRE', 'POST')) {
+   crl <- sapply(dfw %>% select(contains(flag)), function(x) sum(!is.na(x)) / length(x))
+   crp <- apply(dfw %>% select(names(crl)), 1, function(x) sum(!is.na(x)) / length(x))
+   crl <- sort(crl)
+   
+   par(mfrow=c(1,2), mar=c(4, 2, 3, 1), mgp=c(2, 0.5, 0), tck=-0.015, oma=c(0,11,0,0), cex=0.9)
+   b <- barplot(crl, horiz=TRUE, names.arg=NA, xlim=c(0,1), main='By lab', xlab='Completion rate', xpd=NA)
+   abline(v = c(0.2, 0.5, 0.8), lty=3)
+   text(x=-0.02, y=b, adj=1, labels=gsub(paste0(flag, '_'), '', names(crl)), xpd=NA)
    barplot(sort(crp), horiz=TRUE, names.arg=NA, xlim=c(0,1), main='By patient', xlab='Completion rate')
-   abline(v = c(0.2, 0.8), lty=3)
+   abline(v = c(0.2, 0.5, 0.8), lty=3)
+   mtext(text=paste0(flag, ' antibiotic treatment'), side=3, outer=TRUE, line=-2, font=2)
+   
+   if (flag == 'PRE') keep_labs <- c(keep_labs, names(crl[crl > 0.4]))
+   if (flag == 'POST') keep_labs <- c(keep_labs, names(crl[crl > 0.8]))
+   
+   # sicker patients have more labs present
+   dfw %>%
+      mutate(r = crp) %>%
+      coxph(formula = Surv(time, status) ~ r, data=.) %>%
+      summary()
 }
+lab_vals <- dfw %>% select(PERSON_ID, ORDER_DAY, !!grep('^PRE_', names(dfw), value=TRUE))
+save(lab_vals, file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/LabValues_DF_MRSA.Rdata')
 
 
-t <- table(dfw$TRT, crp > 0.8)
-t[,'FALSE'] / rowSums(t) # iDAP the lowest
 
-t <- table(dfw$FIRST_ABX_DAY, crp > 0.8)
-t[,'FALSE'] / rowSums(t) # day 0 the highest missingness because this is patients who are probably the most sick
-
-crl <- crl[crl > 0.8]
-
-dfw %>%
-   filter(TRT != 'sDAP') %>%
-   #select(PERSON_ID, TRT, names(crl[crl > 0.8])) %>%
-   mutate(across(ABS_BASOPHILS:LACTATE, ~ tidyr::replace_na(., mean(., na.rm=T)))) %>%
-   mutate(trt = TRT == 'VAN') %>% relocate(trt, .after=TRT) %>%
-   glm(formula=paste0('trt ~ ', paste(names(crl), collapse=' + ')), 
-       data=., 
-       family=binomial(link='logit')) %>%
-   summary()
 
 library(survival)
-uniq_labs <- unique(labs$LAB)
-uniq_labs <- grep('^ATYP_', uniq_labs, value=TRUE, invert=TRUE)
-dfw <- dfw %>% mutate(VAN = TRT == 'VAN')
-x <- numeric(length(uniq_labs))
-labDF <- data.frame(
-   row.name = uniq_labs,
+dfw <- dfw %>% mutate(VAN = TRT == 'VAN') %>% relocate(VAN, .after=TRT)
+keep_labs <- grep('^PRE', names(dfw[-1:-7]), value=TRUE)
+x <- numeric()
+presDF <- data.frame(
+   row.names = keep_labs,
    trt_i = x,
    trt_s = x,
    sur_i = x,
    sur_s = x
 )
+#labDF <- presDF
 rm(x)
-for (l in seq_along(uniq_labs)) {
+for (l in seq_along(keep_labs)) {
+   cat(l, keep_labs[l], '\n')
    # treatment model
-   i <- glm(formula = paste0('VAN ~ ', uniq_labs[l]), data=dfw, family='binomial', subset=dfw$TRT != 'sDAP') %>% summary()
-   s <- glm(formula = paste0('VAN ~ ', uniq_labs[l]), data=dfw, family='binomial', subset=dfw$TRT != 'iDAP') %>% summary()
-   labDF$trt_i[l] <- i$coefficients[uniq_labs[l], 'Pr(>|z|)']
-   labDF$trt_i[l] <- s$coefficients[uniq_labs[l], 'Pr(>|z|)']
+   i <- glm(formula = paste0('VAN ~ ', keep_labs[l]), data=dfw, family='binomial', subset=dfw$TRT != 'sDAP') %>% summary()
+   s <- glm(formula = paste0('VAN ~ ', keep_labs[l]), data=dfw, family='binomial', subset=dfw$TRT != 'iDAP') %>% summary()
+   labDF$trt_i[l] <- i$coefficients[keep_labs[l], 'Pr(>|z|)']
+   labDF$trt_s[l] <- s$coefficients[keep_labs[l], 'Pr(>|z|)']
    
    # outcome model
-   i <- coxph(formula = as.formula(paste0('Surv(time_censored, status) ~ ', uniq_labs[l])), data=dfw, subset=which(dfw$TRT != 'sDAP')) %>% summary()
+   i <- coxph(formula = as.formula(paste0('Surv(time, status) ~ ', keep_labs[l])), data=dfw, subset=which(dfw$TRT != 'sDAP')) %>% summary()
+   s <- coxph(formula = as.formula(paste0('Surv(time, status) ~ ', keep_labs[l])), data=dfw, subset=which(dfw$TRT != 'iDAP')) %>% summary()
+   labDF$sur_i[l] <- i$coefficients[keep_labs[l], 'Pr(>|z|)']
+   labDF$sur_s[l] <- s$coefficients[keep_labs[l], 'Pr(>|z|)']
+   
+   # presence associated with treatment
+   presDF$trt_i[l] <- fisher.test(table(is.na(dfw[[keep_labs[l]]][dfw$TRT != 'sDAP']), dfw$TRT[dfw$TRT != 'sDAP']))$p.value
+   presDF$trt_s[l] <- fisher.test(table(is.na(dfw[[keep_labs[l]]][dfw$TRT != 'iDAP']), dfw$TRT[dfw$TRT != 'iDAP']))$p.value
+
+   
+   # presence associated with outcome
+   presDF$sur_i[l] <- fisher.test(table(is.na(dfw[[keep_labs[l]]][dfw$TRT != 'sDAP']), dfw$time[dfw$TRT != 'sDAP'] < 30))$p.value
+   presDF$sur_s[l] <- fisher.test(table(is.na(dfw[[keep_labs[l]]][dfw$TRT != 'iDAP']), dfw$time[dfw$TRT != 'iDAP'] < 30))$p.value
 }
+dfw <- dfw %>% select(-VAN)
+
+rownames(labDF)[labDF$trt_i < 0.1]
+rownames(labDF)[labDF$trt_s < 0.1]
+
+im <- dfw %>%
+   filter(TRT != 'sDAP') %>%
+   select(PERSON_ID, TRT, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ tidyr::replace_na(., mean(., na.rm=T)))) %>%
+   mutate(trt = TRT == 'VAN') %>% relocate(trt, .after=TRT) %>%
+   glm(formula=paste0('trt ~ ', paste(keep_labs, collapse=' + ')), 
+       data=., 
+       family=binomial(link='logit')) %>%
+   summary()
+im <- im$coefficients[-1, 'Pr(>|z|)']
+labDF$trt_im <- im[match(rownames(labDF), names(im))]
+
+sm <- dfw %>%
+   filter(TRT != 'iDAP') %>%
+   select(PERSON_ID, TRT, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ tidyr::replace_na(., mean(., na.rm=T)))) %>%
+   mutate(trt = TRT == 'VAN') %>% relocate(trt, .after=TRT) %>%
+   glm(formula=paste0('trt ~ ', paste(keep_labs, collapse=' + ')), 
+       data=., 
+       family=binomial(link='logit')) %>%
+   summary()
+sm <- sm$coefficients[-1, 'Pr(>|z|)']
+labDF$trt_sm <- sm[match(rownames(labDF), names(sm))]
+
+im <- dfw %>%
+   filter(TRT != 'sDAP') %>%
+   select(PERSON_ID, time, status, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ tidyr::replace_na(., mean(., na.rm=T)))) %>%
+   coxph(formula=as.formula(paste0('Surv(time, status) ~ ', paste(keep_labs, collapse=' + '))), data=.) %>%
+   summary()
+im <- im$coefficients[, 'Pr(>|z|)']
+labDF$sur_im <- im[match(rownames(labDF), names(im))]
+
+sm <- dfw %>%
+   filter(TRT != 'iDAP') %>%
+   select(PERSON_ID, time, status, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ tidyr::replace_na(., mean(., na.rm=T)))) %>%
+   coxph(formula=as.formula(paste0('Surv(time, status) ~ ', paste(keep_labs, collapse=' + '))), data=.) %>%
+   summary()
+sm <- sm$coefficients[, 'Pr(>|z|)']
+labDF$sur_sm <- sm[match(rownames(labDF), names(sm))]
+
+
+im <- dfw %>%
+   filter(TRT != 'sDAP') %>%
+   select(PERSON_ID, TRT, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ !is.na(.))) %>%
+   mutate(trt = TRT == 'VAN') %>%
+   glm(formula=paste0('trt ~ ', paste(keep_labs, collapse=' + ')), 
+       data=., 
+       family=binomial(link='logit')) %>%
+   summary()
+im <- im$coefficients[-1, 'Pr(>|z|)']
+presDF$trt_im <- im[match(rownames(presDF), gsub('TRUE', '', names(im)))]
+
+
+sm <- dfw %>%
+   filter(TRT != 'iDAP') %>%
+   select(PERSON_ID, TRT, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ !is.na(.))) %>%
+   mutate(trt = TRT == 'VAN') %>%
+   glm(formula=paste0('trt ~ ', paste(keep_labs, collapse=' + ')), 
+       data=., 
+       family=binomial(link='logit')) %>%
+   summary()
+sm <- sm$coefficients[-1, 'Pr(>|z|)']
+presDF$trt_sm <- sm[match(rownames(presDF), gsub('TRUE', '', names(sm)))]
+
+im <- dfw %>%
+   filter(TRT != 'sDAP') %>%
+   select(PERSON_ID, time, status, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ !is.na(.))) %>%
+   coxph(formula=as.formula(paste0('Surv(time, status) ~ ', paste(keep_labs, collapse=' + '))),
+         data=.) %>%
+   summary()
+im <- im$coefficients[, 'Pr(>|z|)']
+presDF$sur_im <- im[match(rownames(presDF), gsub('TRUE', '', names(im)))]
+
+sm <- dfw %>%
+   filter(TRT != 'iDAP') %>%
+   select(PERSON_ID, time, status, !!keep_labs) %>%
+   mutate(across(!!keep_labs, ~ !is.na(.))) %>%
+   coxph(formula=as.formula(paste0('Surv(time, status) ~ ', paste(keep_labs, collapse=' + '))),
+       data=.) %>%
+   summary()
+sm <- sm$coefficients[, 'Pr(>|z|)']
+presDF$sur_sm <- sm[match(rownames(presDF), gsub('TRUE', '', names(sm)))]
+
+p_order <- c('trt_i', 'trt_im', 'sur_i', 'sur_im', 'trt_s', 'trt_sm', 'sur_s', 'sur_sm')
+labDF <- labDF[p_order]
+presDF <- presDF[p_order]
+
+w <- grep('^PRE_', rownames(labDF))
+labDF <- labDF[w,]
+presDF <- presDF[w,]
+
+presDF[c('PRE_MCHC', 'PRE_MCV'), c('trt_im', 'trt_sm', 'sur_sm', 'sur_im')] <- presDF['PRE_MCH', c('trt_im', 'trt_sm', 'sur_sm', 'sur_im')]
+presDF[c('PRE_RDW', 'PRE_WBC'), c('trt_im', 'trt_sm', 'sur_sm', 'sur_im')] <- presDF['PRE_PLATELETS', c('trt_im', 'trt_sm', 'sur_sm', 'sur_im')]
+#presDF[c('POST_MCHC', 'POST_MCV', 'POST_PLATELETS', 'POST_RDW', 'POST_WBC'), c('trt_im', 'trt_sm', 'sur_sm', 'sur_im')] <- presDF['POST_MCH', c('trt_im', 'trt_sm', 'sur_sm', 'sur_im')]
+
+
+x <- as.matrix(cbind(labDF, presDF))
+x <- round(x, 3)
+width <- 0.5
+xpos <- rep(c(1:8, 9.5:16.5), each=nrow(x))
+ypos <- rep(nrow(x):1, times=16)
+
+# which labs show up in which places?
+{
+   par(mfrow=c(1,1), mar=c(10, 15, 4, 2), oma=c(0,0,0,0), cex=0.9)
+   plot(NA, xlim=c(0.5, 16.5), ylim=c(0.5, nrow(x)+0.5), xaxs='i', yaxs='i', axes=F, ann=F)
+   rect(xleft=xpos-width, xright=xpos+width,
+        ybottom=ypos-width, ytop=ypos+width,
+        xpd=NA, col=ifelse(x < 0.01, 'darkblue', ifelse(x < 0.05, 'blue', ifelse(x < 0.1, 'lightblue', 'white'))))
+   abline(v=c(4.5, 13), lwd=4)
+   text(x=xpos, y=ypos, labels=ifelse(x > 0.1, '', ifelse(x < 0.01, '<0.01', x)), col=ifelse(x < 0.05, 'white', 'black'), xpd=NA)
+   
+   text(x=0.4, y=nrow(x):1, adj=1, xpd=NA, labels=gsub('^PRE_', '', rownames(labDF)))
+   text(x=c(mean(1:8), mean(9.5:16.5)), y=(nrow(x)+0.5)*1.075, xpd=NA, labels=c('Lab values', 'Lab presence'))
+   text(x=c(mean(1:4), mean(5:8), mean(9.5:12.5), mean(13.5:16.5)), y=(nrow(x)+0.5)*1.05, xpd=NA, labels=rep(c('iDAP', 'sDAP'), times=2))
+   text(x=c(seq(1.5,7.5,2), seq(10, 16, 2)), y=(nrow(x)+0.5)*1.025, xpd=NA, labels=rep(c('treatment', 'survival'), times=2))
+}
+
+# which variables are associated with treatment AND survival??
+lab_names <- rownames(labDF)
+conf_labs <- list()
+
+# iDAP
+trt <- lab_names[(labDF[, 'trt_i'] < 0.1) | (labDF[, 'trt_im'] < 0.1)]
+sur <- lab_names[(labDF[, 'sur_i'] < 0.1) | (labDF[, 'sur_im'] < 0.1)]
+conf_labs$iDAP <- union(trt, sur)
+
+# sDAP
+trt <- lab_names[(labDF[, 'trt_s'] < 0.1) | (labDF[, 'trt_sm'] < 0.1)]
+sur <- lab_names[(labDF[, 'sur_s'] < 0.1) | (labDF[, 'sur_sm'] < 0.1)]
+conf_labs$sDAP <- union(trt, sur)
+
+lab_names <- rownames(labDF)
+conf_labs_pres <- list()
+
+# iDAP
+trt <- lab_names[(presDF[, 'trt_i'] < 0.1) | (presDF[, 'trt_im'] < 0.1)]
+sur <- lab_names[(presDF[, 'sur_i'] < 0.1) | (presDF[, 'sur_im'] < 0.1)]
+conf_labs_pres$iDAP <- union(trt, sur)
+
+# sDAP
+trt <- lab_names[(presDF[, 'trt_s'] < 0.1) | (presDF[, 'trt_sm'] < 0.1)]
+sur <- lab_names[(presDF[, 'sur_s'] < 0.1) | (presDF[, 'sur_sm'] < 0.1)]
+conf_labs_pres$sDAP <- union(trt, sur)
+
+
+# what is the missingness of these lab values?
+x <- dfw %>%
+   filter(TRT != 'sDAP') %>%
+   select(!!conf_labs$iDAP)
+crl <- sapply(x, function(x) sum(!is.na(x)) / length(x))
+crl <- sort(crl)
+crp <- sort(apply(x, 1, function(x) sum(!is.na(x)) / length(x)))
+par(mfrow=c(1,2))
+b <- barplot(crl, horiz=TRUE, xlim=c(0,1), names.arg=NA, xlab='Completion rate')
+text(x=-0.05, y=b, adj=1, xpd=NA, labels=names(crl))
+barplot(crp, horiz=TRUE, xlim=c(0,1), xlab='Completion rate')
+mtext(text='iDAP', outer=TRUE, line=-2)
+
+x <- dfw %>%
+   filter(TRT != 'iDAP') %>%
+   select(!!conf_labs$sDAP)
+crl <- sapply(x, function(x) sum(!is.na(x)) / length(x))
+crl <- sort(crl)
+crp <- sort(apply(x, 1, function(x) sum(!is.na(x)) / length(x)))
+par(mfrow=c(1,2))
+b <- barplot(crl, horiz=TRUE, xlim=c(0,1), names.arg=NA, xlab='Completion rate')
+text(x=-0.05, y=b, adj=1, xpd=NA, labels=names(crl))
+barplot(crp, horiz=TRUE, xlim=c(0,1), xlab='Completion rate')
+mtext(text='sDAP', outer=TRUE, line=-2)
+
+
+dfw <- dfw %>% select(PERSON_ID, ORDER_DAY, TRT, time, status, !!unique(unlist(conf_labs)))
+crp <- apply(dfw %>% select(!!unique(unlist(conf_labs))), 1, function(x) sum(!is.na(x)) / length(x))
+dfw$LAB_COMP_RATE <- crp
+
+
+dfw %>%
+   filter(TRT != 'sDAP') %>%
+   coxph(formula = Surv(time, status) ~ TRT + LAB_COMP_RATE, data=.) %>%
+   summary()
+
 
 
 # tasks:
 #     turn each day into 1 number, turn multiple days into 1 number?
 #     take lab results prior to 16 hours after first abx administration
 #     relationship between abx admin delay (1 or 2 days?) and value of labs?
-
-sum(df$X < 16/24)
 
 
 
