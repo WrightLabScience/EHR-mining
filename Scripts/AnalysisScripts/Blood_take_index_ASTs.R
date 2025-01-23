@@ -1,7 +1,7 @@
 start <- Sys.time()
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'ALL_clean_ASTs.Rdata')) # 1,734,071
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata') # 1,734,071
 print(object.size(astDF), units='Mb') # 1,803.7 Mb
 
 # Remove any Coagulase-negative Staph species if they appear in blood cultures

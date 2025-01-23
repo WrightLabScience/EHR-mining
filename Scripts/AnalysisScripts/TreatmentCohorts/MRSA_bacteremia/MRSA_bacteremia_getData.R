@@ -733,10 +733,10 @@ write.table(df %>%
 library(dplyr)
 library(survival)
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/MRSA_BSI_DAP_VAN.Rdata')
-source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/KaplanMeierCurveFxns.R')
+source('~/Desktop/EHR-mining/Scripts/AnalysisScripts/KaplanMeierCurveFxns.R')
 source('~/Desktop/WrightLab/UsefulRfuncs/newBarplotFxn.R')
-source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/DrawTableOneFxn.R')
-source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/ProcessTableOneFxn.R')
+source('~/Desktop/EHR-mining/Scripts/AnalysisScripts/DrawTableOneFxn.R')
+source('~/Desktop/EHR-mining/Scripts/AnalysisScripts/ProcessTableOneFxn.R')
 
 cex <- 1.5
 par(cex.main=cex, cex.axis=cex, cex.lab=cex, cex=cex)

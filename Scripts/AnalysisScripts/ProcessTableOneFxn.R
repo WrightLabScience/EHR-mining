@@ -15,15 +15,15 @@ processTableOne <- function(tOg) {
                        function(t) {
                           if (dim(t)[1] == 1L) return(1L)
                           x <- t[2,] / colSums(t)
-                          return(sign(x[trt[1]] - x[trt[2]]))
+                          return(sign(diff(x)))
                        })
    signs_cont <- sapply(df[names(attributes(tOg$ContTable)$percentMissing)], 
                         function(t) {
                            x <- tapply(t, df$TRT, mean, na.rm=T)
-                           return(sign(x[trt[1]] - x[trt[2]]))
+                           return(sign(diff(x)))
                         })
-   signs <- c(signs_cat, signs_cont); rm(signs_cat, signs_cont)
-   names(signs) <- gsub(paste0('\\.', trt[1]), '', names(signs))
+   signs <- unlist(c(signs_cat, signs_cont))
+   names(signs) <- gsub('\\.1', '', names(signs))
    signs <- signs[match(names(pvals), names(signs))]
    if (!all(names(signs) == names(pvals) & names(pvals) == names(smds))) {
       print('table one vectors are out of order!')
