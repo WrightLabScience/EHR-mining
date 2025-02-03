@@ -10,19 +10,14 @@ abx <- abxDF %>%
    mutate(ABX_ABBR = ifelse(is.na(ABX_ABBR), ABX, ABX_ABBR)) %>%
    select(-ABX) %>%
    rename(ABX = ABX_ABBR)
+rm(abxDF); gc()
 
 
-astDF <- astDF %>% filter(BLOOD)
 
 # Remove any Coagulase-negative Staph species if they appear in blood cultures
+astDF <- astDF %>% filter(BLOOD)
 astDF <- astDF %>% filter(!(grepl('Staph', BUG) & !grepl('Staphylococcus aureus|Staphylococcus lugdunensis', BUG))) # 94,808
 astDF <- astDF %>% filter(!grepl('Cryptococcus|Aspergillus|Candida', BUG)) # 92,090
-
-# only take 2015 - 2023
-astDF <- astDF %>% filter(lubridate::year(ORDER_DAY) %in% 2015:2024) # 69,077
-length(unique(astDF$PERSON_ID)) # 44,271
-
-
 astDF <- astDF %>% filter(lubridate::year(ORDER_DAY) %in% 2017:2023) # 52,487
 
 # how many patients have abx admin events prior to their AST?
@@ -32,8 +27,8 @@ ast <- astDF %>%
    distinct() %>% # 48,314
    arrange(PERSON_ID, ORDER_DAY)
 
-ast <- ast %>% 
-   group_by(PERSON_ID) %>% 
+ast <- ast %>%
+   group_by(PERSON_ID) %>%
    mutate(DAYS_SINCE = as.integer(ORDER_DAY - lag(ORDER_DAY))) %>%
    ungroup()
 
@@ -126,8 +121,6 @@ df %>% filter(is.na(ABX)) %>% group_by(PERSON_ID, ORDER_DAY) # 12,826 / 35,067 h
 # how many days ago were all of these antibiotics prescribed and how many different?
 df %>% group_by(PERSON_ID, ORDER_DAY)
 
-x <- df[1:10000,] %>% arrange(X)
-x %>% group_by(PERSON_ID, ORDER_DAY) # 36 groups
 windows <- 42 * 2^(1:6)
 
 t <- tapply(X = df$X,
@@ -138,7 +131,6 @@ t <- tapply(X = df$X,
 m <- matrix(unlist(t), nrow=length(windows))
 m[is.na(m)] <- 0
 rownames(m) <- windows
-colnames(m) <- unique(df$PERSON_ID)
 
 plot(NA,
      xlim = range(windows), log = 'x',
@@ -152,7 +144,13 @@ apply(m, 2, FUN = function(x) {
 
 
 
-# 
+
+
+
+
+
+
+# add ESBL flag to predict
 ast <- ast %>%
    left_join(
       x = .,
@@ -206,33 +204,73 @@ f <- sapply(dfw %>% select(-PERSON_ID, -ORDER_DAY, -ESBL),
             function(x) sum(x) / length(x))
 f <- sort(f)
 plot(f, log='y')
-dfw <- dfw %>% select(PERSON_ID, ORDER_DAY, ESBL, !!names(f[f > 0.01]))
+# dfw <- dfw %>% select(PERSON_ID, ORDER_DAY, ESBL, !!names(f[f > 0.01]))
 
 
 pvals <- sapply(dfw %>% select(-PERSON_ID, -ORDER_DAY, -ESBL), 
                 function(x) fisher.test(table(x, dfw$ESBL))$p.value)
+plot(sort(pvals), log='y')
+abline(h = 0.01)
 
-fit <- glm(formula = as.formula(paste0('ESBL ~ ', 
+names(dfw) <- gsub('/|,| |-', '_', names(dfw))
+# large model, takes a while to run
+fit <- glm(formula = as.formula(paste0('ESBL ~ ',
                                        paste(dfw %>% 
                                                 select(-PERSON_ID, -ORDER_DAY, -ESBL) %>% 
-                                                names, 
+                                                names,
                                              collapse = ' + '))),
            family = binomial(link = 'logit'),
            data = dfw)
+summary(fit)
 
+
+# assess model predictions on training set
 preds <- predict(fit, 
                  newdata=dfw %>% 
                     select(-PERSON_ID, -ORDER_DAY, -ESBL),
                  type='response')
 labels <- dfw$ESBL
+prevalence <- sum(labels == 1L) / length(labels)
 
-o <- order(preds)
+o <- order(preds, decreasing=TRUE)
 preds <- preds[o]
 labels <- labels[o]
+rm(o)
 
-plot(NA, xlim=c(0, 1), ylim=c(0, 100))
-lines(density(preds[dfw$ESBL == 0L]))
-lines(density(preds[dfw$ESBL == 1L]))
+wil <- wilcox.test(preds[labels == 1L], preds[labels == 0L])
+W <- wil$statistic
+m <- sum(labels == 1L)
+n <- sum(labels == 0L)
+
+# plot(NA, xlim=c(0, 1), ylim=c(0, 100))
+# lines(density(preds[dfw$ESBL == 0L]))
+# lines(density(preds[dfw$ESBL == 1L]))
+
+thresholds <- c(0, unique(preds), 1) # 16,037
+
+tp_cumsum <- cumsum(labels == 1)
+fp_cumsum <- cumsum(labels == 0)
+total_pos <- sum(labels == 1)
+total_neg <- sum(labels == 0)
+
+sens <- tp_cumsum / total_pos  # Sensitivity
+spec <- (total_neg - fp_cumsum) / total_neg  # Specificity
+prec <- tp_cumsum / (tp_cumsum + fp_cumsum)  # Precision
+
+# Handle edge cases for precision (avoid division by zero)
+prec[is.nan(prec)] <- 0
+
+# plot
+par(mfrow=c(2,1), mgp=c(2, 0.5, 0), tck=-0.015)
+plot(x=1 - spec, y=sens, xlim=c(0,1), ylim=c(0,1), type='l', xaxs='i', yaxs='i')
+abline(a=0, b=1, lty=3)
+plot(x=sens, y=prec, xlim=c(0,1), ylim=c(0,1), type='l', xaxs='i', yaxs='i')
+abline(h = prevalence, lty=3)
+
+(W - m * (m + 1) / 2) / (m * n)
+# 0.6376054 
+#
+
 
 
 thresholds <- c(0, unique(preds), 1)

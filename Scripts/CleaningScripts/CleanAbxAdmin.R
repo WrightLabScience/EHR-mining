@@ -1,10 +1,11 @@
 # This script takes the currently separate antibiotic med_admin txt files
 # and combines then into a large tibble and cleans them
 library(dplyr)
+setwd('~/Desktop/EHR/EHR work/RdataFiles/MED_ADMIN_DATA/')
 
 
 # first SENS_MED_ADMIN_VW
-path <- '~/Desktop/EHR/EHR work/RdataFiles/MED_ADMIN_data/SENS_MED_ADMIN_VW/'
+path <- 'SENS_MED_ADMIN_ABX_DATA/'
 ls <- list.files(path)
 abxDF <- tibble()
 for (i in seq_along(ls)) {
@@ -16,7 +17,7 @@ rm(path, ls, i)
 
 
 # then SENS_MED_ADMIN_IV_VW
-path <- '~/Desktop/EHR/EHR work/RdataFiles/MED_ADMIN_data/SENS_MED_ADMIN_IV_VW/'
+path <- 'SENS_MED_ADMIN_IV_ABX_DATA/'
 ls <- list.files(path)
 for (i in seq_along(ls)) {
    cat(i, ls[i], '\n')
@@ -28,20 +29,23 @@ rm(path, ls, i)
 
 # arrange and remove duplicates, then save
 abxDF <- abxDF %>%
-   arrange(PERSON_ID, ADMIN_START_DATE) %>%
+   arrange(PERSON_ID, ADMIN_START_DATE, MEDICATION) %>%
    distinct()
 
-save(abxDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2017_2023_AbxAdmin.Rdata')
+save(abxDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2015_2024_AbxAdmin.Rdata')
+
+
 
 
 ###################################
 ######## CLEAN ABX TIBBLE #########
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2017_2023_AbxAdmin.Rdata')
-length(unique(abxDF$PERSON_ID)) # 322,355
+library(dplyr)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2015_2024_AbxAdmin.Rdata')
+length(unique(abxDF$PERSON_ID)) # 395,393
 
 # get counts of each medication
-meds <- abxDF %>% count(MEDICATION, sort=TRUE)
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abx_names_for_abxDF.Rdata')
+meds <- abxDF %>% count(MEDICATION, sort=TRUE) # 1,113
+load(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/antibiotic_names/abx_names_for_abxDF.Rdata')
 
 # assign each individual antibiotic search term to the respective row of meds
 meds$ABX <- character(nrow(meds))
@@ -73,27 +77,45 @@ meds <- meds %>%
       ABX == 'PENICILLIN,PENICILLIN V' ~ 'PENICILLIN V',
       ABX == 'CILASTATIN,IMIPENEM,RELEBACTAM' ~ 'IMIPENEM/RELEBACTAM',
       ABX == 'CILASTATIN,IMIPENEM' ~ 'IMIPENEM',
-      
+      ABX == 'CLAVULANATE,TICARCILLIN' ~ 'TICARCILLIN/CLAVULANATE',
+      ABX == 'DURLOBACTAM,SULBACTAM' ~ 'SULBACTAM/DURLOBACTAM',
       .default = ABX
    ))
 meds <- setNames(meds$ABX, meds$MEDICATION)
 
 # create antibiotic column from the named vector of antibiotics
 start <- Sys.time()
-abxDF <- abxDF %>% mutate(ABX = meds[MEDICATION])
-print(Sys.time() - start) # 0.3 seconds for ~8.65 million rows
+abxDF <- abxDF %>% mutate(ABX = unname(meds[MEDICATION]))
+print(Sys.time() - start) # 0.65 seconds for ~8.65 million rows
 rm(start, meds)
-names(abxDF$ABX) <- NULL
 
-# handle AMPHOTERICIN,GENTAMICIN,VANCOMYCIN
-w <- which(abxDF$ABX == 'AMPHOTERICIN,GENTAMICIN,VANCOMYCIN')
-df1 <- df2 <- df3 <- abxDF[w,]
-df1$ABX <- 'AMPHOTERICIN'
-df2$ABX <- 'GENTAMICIN'
-df3$ABX <- 'VANCOMYCIN'
-df <- rbind(df1, df2, df3) %>% arrange(PERSON_ID, ADMIN_START_DATE)
-abxDF <- rbind(abxDF[-w,], df)
-rm(df1, df2, df3, df, w)
+# handle multi antibiotic administrations that should be considered separately
+meds <- abxDF %>% count(ABX, sort=TRUE)
+meds %>% filter(grepl(',', ABX))
+separateAndExtend <- function(abx_list) {
+   w <- which(abxDF$ABX == abx_list)
+   abx_list_sep <- strsplit(abx_list, split=',')[[1]]
+   df1 <- df2 <- abxDF[w,]
+   df1$ABX <- abx_list_sep[1]
+   df2$ABX <- abx_list_sep[2]
+   df <- rbind(df1, df2)
+   if (length(abx_list_sep) == 3L) {
+      df3 <- abxDF[w,]
+      df3$ABX <- abx_list_sep[3]
+      df <- rbind(df, df3)
+   }
+   rbind(abxDF[-w,], df)
+}
+abxDF <- separateAndExtend('BACITRACIN,NEOMYCIN,POLYMYXIN B')
+abxDF <- separateAndExtend('BACITRACIN,POLYMYXIN B')
+abxDF <- separateAndExtend('POLYMYXIN B,TRIMETHOPRIM')
+abxDF <- separateAndExtend('NEOMYCIN,POLYMYXIN B')
+abxDF <- separateAndExtend('COLISTIN,GENTAMICIN')
+abxDF <- separateAndExtend('AMPHOTERICIN,GENTAMICIN,VANCOMYCIN')
+abxDF <- separateAndExtend('COLISTIN,NEOMYCIN')
+rm(meds, separateAndExtend)
+
+
 
 
 # Remove unnecessary columns (for now) and take distinct()
@@ -104,17 +126,18 @@ abxDF <- abxDF %>%
    rename(START_DATE = ADMIN_START_DATE,
           END_DATE = ADMIN_END_DATE) %>%
    mutate(START_DAY = lubridate::as_date(START_DATE)) %>%
-   filter(lubridate::year(START_DATE) %in% 2016:2024) %>%
-   distinct() %>% # 8,649,274 --> 8,587,158
-   arrange(PERSON_ID, ABX, START_DATE)
+   distinct() %>% # 12,521,074 --> 12,387,010
+   arrange(PERSON_ID, START_DATE, ABX)
 
-abxDF <- abxDF %>% filter(PERSON_ID != '1.001e+09')
+abxDF %>% count(lubridate::year(START_DATE)) %>% print(n=15)
+
+abxDF <- abxDF %>% 
+   filter(PERSON_ID != '1.001e+09') %>%
+   filter(!is.na(START_DATE)) %>%
+   filter(lubridate::year(START_DATE) >= 2014L) # 12,373,076
 
 # most common drugs
 abxDF %>% count(ABX, sort=TRUE)
-abxDF %>% count(lubridate::year(START_DAY))
-abxDF %>% count(is.na(END_DATE)) # 34,257
-abxDF %>% count(START_DATE == END_DATE) # 3,326,883 (~40%)
 
 
 abxDF %>%
@@ -124,7 +147,7 @@ abxDF %>%
              .by = ABX) %>%
    arrange(desc(median))
 
-save(abxDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_CLEANED_2017_2023_AbxAdmin.Rdata')
+save(abxDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_CLEANED_2015_2024_AbxAdmin.Rdata')
 
 
 

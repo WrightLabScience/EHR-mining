@@ -1,12 +1,6 @@
 library(dplyr)
 source('~/Desktop/WrightLab/UsefulRfuncs/newBarplotFxn.R')
 
-df <- astDF %>% filter(BLOOD)
-x <- sapply(df %>% select(CEFEPIME:ESBL), function(x) sum(x, na.rm=T))
-x <- x[!is.na(x)]
-data.frame(sort(x))
-
-
 
 ##### GET MRSA BSI ASTS #####
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
@@ -14,7 +8,7 @@ ast <- astDF %>%
    filter(BUG == 'Staphylococcus aureus',
           OXACILLIN == 1L, 
           BLOOD,
-          lubridate::year(ORDER_DAY) %in% 2017:2023) %>%
+          lubridate::year(ORDER_DAY) %in% 2015:2024) %>%
    summarise(
       ORDER_DATE = min(ORDER_DATE),
       RESULT_DATE = min(RESULT_DATE),
@@ -24,7 +18,7 @@ ast <- astDF %>%
    filter(as.integer(RESULT_DAY - ORDER_DAY) <= 8L) %>%
    arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
 
-length(unique(ast$PERSON_ID)) # 3,452
+length(unique(ast$PERSON_ID)) # 4,562
 
 ast <- ast %>%
    group_by(PERSON_ID) %>%
@@ -39,7 +33,7 @@ ast <- ast %>%
    ))
 
 
-sum(ast$DAYS_SINCE_PRV <= 0, na.rm=T) / nrow(ast) # 27%
+sum(ast$DAYS_SINCE_PRV <= 9, na.rm=T) / nrow(ast) # 27%
 sum(ast$DAYS_SINCE_PRV <= 30, na.rm=T) / nrow(ast) # 35.5%
 
 plotBarplot(ast$DAYS_SINCE_PRV[ast$DAYS_SINCE_PRV < 90])
@@ -52,7 +46,7 @@ resp <- astDF %>%
    filter(BUG == 'Staphylococcus aureus',
           OXACILLIN == 1L, 
           RESPIRATORY,
-          lubridate::year(ORDER_DAY) %in% 2017:2023) %>%
+          lubridate::year(ORDER_DAY) %in% 2015:2024) %>%
    select(PERSON_ID, ORDER_DAY) %>%
    distinct()
 ast <- ast %>%
@@ -80,7 +74,7 @@ rm(dth); gc()
 
 
 ##### JOIN ABX ADMIN #####
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_CLEANED_2017_2023_AbxAdmin.Rdata')
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_CLEANED_2015_2024_AbxAdmin.Rdata')
 van_dap_abx_data <- abxDF %>% 
    filter(PERSON_ID %in% unique(ast$PERSON_ID),
           ABX %in% c('VANCOMYCIN', 'DAPTOMYCIN')) %>% # 108K
@@ -225,7 +219,7 @@ if (FALSE) {
                     .fns = ~ strptime(., format='%m/%d/%Y %T'))) %>%
       mutate(ADMIT_DAY = lubridate::as_date(ADMIT_DATE), 
              DISCHARGE_DAY = lubridate::as_date(DISCHARGE_DATE))
-   source('~/Desktop/EHR/EHR-mining/Scripts/CleaningScripts/CombineOverlappingEncountersFxn.R')
+   source('~/Desktop/EHR-mining/Scripts/CleaningScripts/CombineOverlappingEncountersFxn.R')
    encs <- combineOverlappingEncounters(encs_og)
    
    save(encs, file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/MRSA_bacteremia/EncountersCleaned.Rdata')
@@ -342,7 +336,7 @@ if (FALSE) {
          dx,
          tbl(conn, in_schema('AMB_ETL', 'LAB_SENS_DX_VW')) %>%
             filter(PERSON_ID %in% local(ids[chunk]),
-                   lubridate::year(DX_FROM_DATE) %in% 2017:2023) %>%
+                   lubridate::year(DX_FROM_DATE) %in% 2013:2024) %>%
             collect()
       )
    }
@@ -474,35 +468,35 @@ dfx %>% summarise(across(OsteoChronic:Smoking, ~ sum(.) / n()), .by=TRT)
 
 
 ### POST-TREATMENT
-dfx <- dfx %>%
-   left_join(y = dx,
-             by = join_by(
-                PERSON_ID,
-                ABX_START_TIME <= DX_DATE,
-                ABX_END_TIME >= DX_DATE
-             )) %>%
-   mutate(CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   mutate(
-      Post_SepticShock = any(grepl('with septic shock', CODE_DESCRIPTION)),
-      Post_Sepsis = any(grepl('sepsis', CODE_DESCRIPTION)), 
-      Post_AKI = any(grepl('^N17.9', DX_CODE)), 
-      Post_Endocarditis = any(grepl('^I33.0', DX_CODE)),
-      Post_Osteomyelitis = any(grepl('^M86', DX_CODE) & !grepl('chronic', CODE_DESCRIPTION)),
-      Post_Cellulitis = any(grepl('^L03.90', DX_CODE)),
-      Post_Peritonitis = any(grepl('^K65.9', DX_CODE)),
-      Post_Respiratory = any(grepl('^J', DX_CODE) & grepl('infect', CODE_DESCRIPTION))
-   ) %>%
-   ungroup() %>%
-   select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION) %>%
-   distinct()
+# dfx <- dfx %>%
+#    left_join(y = dx,
+#              by = join_by(
+#                 PERSON_ID,
+#                 ABX_START_TIME <= DX_DATE,
+#                 ABX_END_TIME >= DX_DATE
+#              )) %>%
+#    mutate(CODE_DESCRIPTION = ifelse(is.na(CODE_DESCRIPTION), 'none', CODE_DESCRIPTION)) %>%
+#    group_by(PERSON_ID, ORDER_DAY) %>%
+#    mutate(
+#       Post_SepticShock = any(grepl('with septic shock', CODE_DESCRIPTION)),
+#       Post_Sepsis = any(grepl('sepsis', CODE_DESCRIPTION)), 
+#       Post_AKI = any(grepl('^N17.9', DX_CODE)), 
+#       Post_Endocarditis = any(grepl('^I33.0', DX_CODE)),
+#       Post_Osteomyelitis = any(grepl('^M86', DX_CODE) & !grepl('chronic', CODE_DESCRIPTION)),
+#       Post_Cellulitis = any(grepl('^L03.90', DX_CODE)),
+#       Post_Peritonitis = any(grepl('^K65.9', DX_CODE)),
+#       Post_Respiratory = any(grepl('^J', DX_CODE) & grepl('infect', CODE_DESCRIPTION))
+#    ) %>%
+#    ungroup() %>%
+#    select(-DX_DATE, -DX_CODE, -CODE_DESCRIPTION) %>%
+#    distinct()
 ##### END #####
 
 
 ##### JOIN OTHER ISOLATES #####
 load(file='~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
 otherBugs <- astDF %>%
-   filter(lubridate::year(ORDER_DAY) %in% 2017:2023,
+   filter(lubridate::year(ORDER_DAY) %in% 2014:2024,
           PERSON_ID %in% unique(dfx$PERSON_ID)) %>%
    mutate(MRSA_BSI = BUG == 'Staphylococcus aureus' & OXACILLIN == 1L & BLOOD) %>%
    filter(!MRSA_BSI) %>%
@@ -607,7 +601,7 @@ rm(micDF, vanDF); gc()
 dfx %>%
    mutate(RESP = !is.na(RESP_CULT_DAY)) %>%
    summarise(n = n(),
-             d30 = sum(time < 30) / n(),
+             d30 = sum(time < 30, na.rm=T) / n(),
              .by = c(TRT, RESP)) %>%
    tidyr::pivot_wider(id_cols=TRT, values_from=d30, names_from=RESP)
 dfx <- dfx %>% filter(is.na(RESP_CULT_DAY)) %>% select(-RESP_CULT_DAY)
@@ -626,8 +620,8 @@ site_groups <- list(
    community = c('Passavant', 'East', 'McKeesport', 'St. Margaret'),
    rural = c('Bedford', 'Northwest', 'Horizon', 'Chatauqua')
 )
-save(site_names, file='~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/UPMC_site_names.Rdata')
-save(site_groups, file='~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/UPMC_site_groups.Rdata')
+save(site_names, file='~/Desktop/EHR-mining/UsefulDataForCleaning/UPMC_site_names.Rdata')
+save(site_groups, file='~/Desktop/EHR-mining/UsefulDataForCleaning/UPMC_site_groups.Rdata')
 
 dfx <- dfx %>%
    mutate(
@@ -664,14 +658,14 @@ dfx <- dfx %>% filter(!is.na(CATEGORY) & !is.na(CATEGORY_TRANSFER))
 dfx <- dfx %>%
    mutate(RECENT_MRSA = !is.na(DAYS_SINCE_PRV),
           RECENT_MRSA_1y = !is.na(DAYS_SINCE_PRV) & DAYS_SINCE_PRV <= 365L)
-dfx <- dfx %>%
-   mutate(VAN_MIC = case_when(
-      VAN_MIC == 0.75 ~ 0.5,
-      VAN_MIC == 1.5 ~ 1,
-      is.na(VAN_MIC) ~ 1,
-      .default = VAN_MIC
-   )) %>%
-   mutate(VAN_MIC_2 = VAN_MIC >= 2)
+# dfx <- dfx %>%
+#    mutate(VAN_MIC = case_when(
+#       VAN_MIC == 0.75 ~ 0.5,
+#       VAN_MIC == 1.5 ~ 1,
+#       is.na(VAN_MIC) ~ 1,
+#       .default = VAN_MIC
+#    )) %>%
+#    mutate(VAN_MIC_2 = VAN_MIC >= 2)
 
 
 # add lab values
@@ -909,9 +903,11 @@ rm(t, b, cs)
 dfx %>%
    filter(CATEGORY == 'academic', TRT != 'iDAP') %>%
    mutate(year = case_when(
-      year %in% 2017:2018 ~ '2017-2019',
-      year %in% 2019:2020 ~ '2020-2021',
-      year %in% 2021:2023 ~ '2022-2023'
+      year %in% 2015:2016 ~ '2015-2016',
+      year %in% 2017:2018 ~ '2017-2018',
+      year %in% 2019:2020 ~ '2019-2020',
+      year %in% 2021:2022 ~ '2021-2022',
+      year %in% 2022:2023 ~ '2022-2023'
    )) %>%
    summarise(n=n(),
              sep = sum(Sepsis_1w) / n,
@@ -939,9 +935,11 @@ dfx %>%
 t <- dfx %>%
    mutate(d30 = time_censored < 30L) %>%
    mutate(year = case_when(
-      year %in% 2017:2018 ~ '2017-2019',
-      year %in% 2019:2020 ~ '2020-2021',
-      year %in% 2021:2023 ~ '2022-2023'
+      year %in% 2015:2016 ~ '2015-2016',
+      year %in% 2017:2018 ~ '2017-2018',
+      year %in% 2019:2020 ~ '2019-2020',
+      year %in% 2021:2022 ~ '2021-2022',
+      year %in% 2022:2023 ~ '2022-2023'
    )) %>%
    summarise(
       n = n(),

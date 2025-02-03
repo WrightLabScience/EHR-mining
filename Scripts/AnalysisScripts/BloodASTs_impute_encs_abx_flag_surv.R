@@ -33,7 +33,7 @@ for (abx in c("CEFOTAXIME", "CEFTAZIDIME", "CEFTRIAXONE", "CEFEPIME")) {
 astCOPY <- astDF
 w_first_abx_col <- which(names(astDF) == 'CEFEPIME')
 {
-   source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesClean.R')
+   source(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/ASTimputation/ImputationRulesClean.R')
    abx_names <- names(astDF)[w_first_abx_col:length(astDF)]
    imp_rules$Antibiotic[!unique(imp_rules$Antibiotic) %in% abx_names] # CEFADROXIL, CEFPODOXIME, CEPHALEXIN, DICLOXACILLIN, NAFCILLIN
    abx_names[!abx_names %in% imp_rules$Antibiotic] # lots
@@ -251,6 +251,7 @@ astTEST2 <- astTEST
    # fluoroquinolones
    FLUOROQUINOLONES <- c("CIPROFLOXACIN", "GATIFLOXACIN",  "GEMIFLOXACIN",  "LEVOFLOXACIN",
                          "MOXIFLOXACIN", "NORFLOXACIN", "OFLOXACIN", "TEMAFLOXACIN")
+   ISOXAZOLYL_PENICILLINS <- c('OXACILLIN', 'CLOXACILLIN', 'DICLOXACILLIN')
    # cephalosporins (split by generations) and carbapenems
    CEPHg1 <- c("CEFAZOLIN", "CEPHALEXIN", "CEFALEXIN", "CEPHALOTHIN", "CEFALOTHIN",
                "CEFALOTIN", "CEFAPIRIN", "CEFRADINE", "CEFADROXIL", "CEFATRIZINE")

@@ -6,8 +6,9 @@ Ampicillin AMP Penicillin
 Ampicillin-sulbactam SAM β-lactam+adjuvant
 Azithromycin AZM Macrolide
 Aztreonam ATM Monobactam
+Bacitracin BAC Polypeptide
 Caspofungin CFG Antifungal
-Cefalexin LEX Cephalosporin
+Cephalexin LEX Cephalosporin
 Cefazolin CFZ Cephalosporin
 Cefepime FEP Cephalosporin
 Cefixime CFX Cephalosporin

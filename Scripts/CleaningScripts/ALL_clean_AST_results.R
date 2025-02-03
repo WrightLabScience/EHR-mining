@@ -123,8 +123,7 @@ print(Sys.time() - start) # ~14.5 minutes
 library(dplyr)
 library(tidyr)
 
-load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/data_path_name.Rdata')
-load(file = paste0(data_path_name, 'lab_micro_sens_all_cleaned_long.Rdata'))
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_sens_all_cleaned_long.Rdata')
 
 
 # pivot to wide
@@ -136,7 +135,7 @@ astrDF <- astrDF %>% # 21,478,682 --> 1,789,478
                values_fn = max,
                unused_fn = ~ paste(unique(.), collapse=', ')) %>%
    relocate(PATH_NAME, .after=BUG)
-print(Sys.time() - start) # 2.4 minutes
+print(Sys.time() - start) # 1.4 minutes
 
 # Detect MRSA from pathogen_name when oxacillin status is missing
 astrDF <- astrDF %>%
@@ -151,6 +150,9 @@ astrDF <- astrDF %>%
 # i think some of the enterobacterales I called ESBL-producing may not actually be
 # probably the ones that were missing CRO and were tested against any carbapenem
 astrDF_og <- astrDF
+# w <- which(grepl('esbl|extended spectrum beta lactamase', astrDF$PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', astrDF$PATH_NAME))
+
+
 astrDF <- astrDF %>%
    mutate(ENT = BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Pseudomonas aeruginosa', 'Proteus mirabilis', 'Proteus penneri',
                            "Enterobacter cloacae", "Klebsiella oxytoca", "Serratia marcescens", "Enterobacter aerogenes", "Klebsiella aerogenes",
@@ -168,8 +170,8 @@ bugs <- astrDF %>% count(BUG, sort=TRUE)
 
 astrDF <- astrDF %>%
    mutate(EKR = BUG %in% c("Klebsiella pneumoniae", "Klebsiella oxytoca", "Klebsiella variicola", "Klebsiella species", "Klebsiella ozaenae", "Klebsiella ornithinolytica",
-                           'Escherichia coli', "Raoultella planticola", "Raoultella ornithinolytica", "Raoultella species")) %>%
-   mutate(ESBL2 = EKR & (CEFEPIME == 1L | CEFOTAXIME == 1L | CEFTRIAXONE == 1L | CEFTAZIDIME == 1L))
+                           'Escherichia coli', "Raoultella planticola", "Raoultella ornithinolytica", "Raoultella species")) %>% # E coli, Klebsiella, Raoultella
+   mutate(ESBL2 = EKR & (CEFEPIME == 1L | CEFOTAXIME == 1L | CEFTRIAXONE == 1L | CEFTAZIDIME == 1L)) # resistant to 3rd or 4th gen cephalosporins
 
 w <- which(astrDF$EKR & astrDF$ESBL2 & astrDF$ESBL == 0L)
 astrDF$ESBL[w] <- 1
