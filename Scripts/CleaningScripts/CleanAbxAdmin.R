@@ -41,10 +41,10 @@ save(abxDF, file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2015_2024_AbxAdmin.Rda
 ######## CLEAN ABX TIBBLE #########
 library(dplyr)
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_2015_2024_AbxAdmin.Rdata')
-length(unique(abxDF$PERSON_ID)) # 395,393
+length(unique(abxDF$PERSON_ID)) # 398,266
 
 # get counts of each medication
-meds <- abxDF %>% count(MEDICATION, sort=TRUE) # 1,113
+meds <- abxDF %>% count(MEDICATION, sort=TRUE) # 1,114
 load(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/antibiotic_names/abx_names_for_abxDF.Rdata')
 
 # assign each individual antibiotic search term to the respective row of meds
@@ -83,11 +83,9 @@ meds <- meds %>%
    ))
 meds <- setNames(meds$ABX, meds$MEDICATION)
 
-# create antibiotic column from the named vector of antibiotics
-start <- Sys.time()
+# create antibiotic column from the named vector of antibiotics - shockingly fast
 abxDF <- abxDF %>% mutate(ABX = unname(meds[MEDICATION]))
-print(Sys.time() - start) # 0.65 seconds for ~8.65 million rows
-rm(start, meds)
+rm(meds)
 
 # handle multi antibiotic administrations that should be considered separately
 meds <- abxDF %>% count(ABX, sort=TRUE)
@@ -126,7 +124,7 @@ abxDF <- abxDF %>%
    rename(START_DATE = ADMIN_START_DATE,
           END_DATE = ADMIN_END_DATE) %>%
    mutate(START_DAY = lubridate::as_date(START_DATE)) %>%
-   distinct() %>% # 12,521,074 --> 12,387,010
+   distinct() %>%
    arrange(PERSON_ID, START_DATE, ABX)
 
 abxDF %>% count(lubridate::year(START_DATE)) %>% print(n=15)
@@ -134,7 +132,7 @@ abxDF %>% count(lubridate::year(START_DATE)) %>% print(n=15)
 abxDF <- abxDF %>% 
    filter(PERSON_ID != '1.001e+09') %>%
    filter(!is.na(START_DATE)) %>%
-   filter(lubridate::year(START_DATE) >= 2014L) # 12,373,076
+   filter(lubridate::year(START_DATE) >= 2014L)
 
 # most common drugs
 abxDF %>% count(ABX, sort=TRUE)

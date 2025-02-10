@@ -2,7 +2,7 @@ source(file = '~/Desktop/EHR/EHR work/config_file.R')
 
 dth <- tbl(conn, in_schema('AMB_ETL', 'SENS_PATIENT_DEMO_VW')) %>%
    collect()
-length(unique(dth$PERSON_ID)) # 374,305
+length(unique(dth$PERSON_ID)) # 493,382
 dth <- dth %>%
    arrange(PERSON_ID) %>%
    mutate(across(c(DOB, DEATH_DATE), ~ as.Date(., format='%m/%d/%Y')))

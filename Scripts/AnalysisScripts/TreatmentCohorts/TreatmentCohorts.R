@@ -582,17 +582,18 @@ library(dplyr)
 load(file = '~/Desktop/EHR/EHR work/RdataFiles/ALL_clean_ASTs.Rdata')
 
 pseu <- astDF %>%
-   filter(any(BUG == 'Pseudomonas aeruginosa'), .by=c(PERSON_ID, ORDER_DAY)) %>%
-   group_by(PERSON_ID, ORDER_DAY) %>%
-   mutate(MULT_ISO = n() > 1L) %>%
+   # filter(any(BUG == 'Pseudomonas aeruginosa'), .by=c(PERSON_ID, ORDER_DAY)) %>%
+   # group_by(PERSON_ID, ORDER_DAY) %>%
+   # mutate(MULT_ISO = n() > 1L) %>%
    filter(BUG == 'Pseudomonas aeruginosa') %>%
-   ungroup() %>%
+   # ungroup() %>%
    mutate(APP_R = case_when(`PIPERACILLIN/TAZOBACTAM` == 1L ~ 1L, .default = 0L),
           CEF_R = case_when(CEFTAZIDIME == 1L | CEFEPIME == 1L ~ 1L, .default = 0L),
           FLQ_R = case_when(CIPROFLOXACIN == 1L | LEVOFLOXACIN == 1L ~ 1L, .default = 0L),
           AMI_R = case_when(TOBRAMYCIN == 1L | GENTAMICIN == 1L | AMIKACIN == 1L ~ 1L, .default = 0L),
           CAR_R = case_when(MEROPENEM == 1L | IMIPENEM == 1L ~ 1L, .default = 0L)) %>% 
    mutate(MDR_SCORE = APP_R + CEF_R + FLQ_R + AMI_R + CAR_R)
+pseu %>% count(MDR_SCORE)
 
 mdr <- pseu %>%
    filter(MDR_SCORE >= 3) %>%

@@ -18,7 +18,7 @@ astDF <- left_join(x = astrDF,
                    by = join_by(PERSON_ID, ORDER_PROC_ID, BUG, RESULT_DAY)) %>%
    relocate(ORDER_DATE, RESULT_DATE, RESULT_DAY, BLOOD, RESPIRATORY, .after=ORDER_PROC_ID)
 
-astDF %>% count(is.na(ORDER_DATE)) # 334K still need an order date
+astDF %>% count(is.na(ORDER_DATE)) # 340,847 still need an order date
 
 # then join without bug on the remaining records in ast that do not have an order_date
 # with those orders in asto that do not have a bug
@@ -94,7 +94,7 @@ astDF <- rbind(astDF, astDFm) %>% arrange(PERSON_ID, ORDER_DATE, RESULT_DATE)
 rm(astDFm)
 
 
-nrow(astDF) 
+nrow(astDF) # 
 
 
 ###################################################################################

@@ -5,43 +5,47 @@ start <- Sys.time()
 library(dplyr)
 library(tidyr)
 
-load(file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_sens_all_vw.Rdata')
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_all_vw.Rdata')
 
 
 # simple prep
-astrDF <- astrDF %>%
+astrDF <- astrDF2 %>%
    rename(PATH_NAME = ORGANISM_NAME,
           ANTIBIOTIC = ANITBIOTIC_NAME) %>%
    mutate(PATH_NAME = gsub('  ', ' ', PATH_NAME)) %>%
-   mutate(PATH_NAME = stringr::str_to_lower(PATH_NAME)) %>%
-   mutate(RESULT_DATE = as.Date(substr(RESULT_DATE,1,10), format='%m/%d/%Y')) %>%
-   mutate(STATUS = case_when(
-      grepl('SENSITIVE|NEGATIVE', SUSCEPTIBILITY_NAME)              | grepl('Sensitive',              SENSITIVITY_VALUE) ~ 0,
-      grepl('RESISTANT|POSITIVE|INTERMEDIATE', SUSCEPTIBILITY_NAME) | grepl('Resistant|Intermediate', SENSITIVITY_VALUE) ~ 1
-   )) %>%
-   select(-ORGANISM_ID, -ANTIBIOTIC_LOINC_CODE, -SUSCEPTIBILITY_NAME, -SENSITIVITY_VALUE, -SENSITIVITY_COMMENT)
+   mutate(
+      PATH_NAME = stringr::str_to_lower(PATH_NAME),
+      RESULT_DATE = as.Date(substr(RESULT_DATE,1,10), format='%m/%d/%Y'),
+      STATUS = case_when(
+         grepl('SENSITIVE|NEGATIVE', SUSCEPTIBILITY_NAME)              | grepl('Sensitive',              SENSITIVITY_VALUE) ~ 0,
+         grepl('RESISTANT|POSITIVE|INTERMEDIATE', SUSCEPTIBILITY_NAME) | grepl('Resistant|Intermediate', SENSITIVITY_VALUE) ~ 1
+      )
+   ) %>%
+   select(-LOINC_CODE, -SUSCEPTIBILITY_NAME, -SENSITIVITY_VALUE)
+rm(astrDF2); gc()
 
 
 # get just the unique pathogen names for cleaning
-source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
-astrDF <- astrDF %>% filter(!is.na(PATH_NAME))
-path_names <- astrDF %>% # 76,948
+source(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
+astrDF <- astrDF %>% filter(!(is.na(PATH_NAME) & is.na(ANTIBIOTIC)))
+path_names <- astrDF %>% # 78,777
    count(PATH_NAME, sort=TRUE) %>%
    mutate(BUG = NA_character_)
 path_names <- cleanPathogenNames(path_names)
 path_names <- path_names %>% filter(!is.na(BUG))
 path_names <- setNames(object = path_names$BUG, nm = path_names$PATH_NAME)
 astrDF <- astrDF %>%
-   mutate(BUG = path_names[PATH_NAME]) %>%
+   mutate(BUG = unname(path_names[PATH_NAME])) %>%
    mutate(BUG = ifelse(is.na(BUG), 'Did not match', BUG))
 astrDF$BUG[which(is.na(astrDF$PATH_NAME))] <- NA
-names(astrDF$BUG) <- NULL
 rm(path_names)
 
 
 # Clean up the antibiotic names
-astrDF <- astrDF %>%
-   mutate(ANTIBIOTIC = case_when(
+# astrDF <- astrDF %>%
+abx_names <- astrDF %>% count(ANTIBIOTIC)
+abx_names <- abx_names %>%
+   mutate(ABX = case_when(
       stringi::stri_detect_regex(pattern='.+ [0-9]+(\\.[0-9])? ?(UG|MCG)/ML',                                        str=ANTIBIOTIC) ~ gsub('^(.+) [0-9]+(\\.[0-9])? ?(UG|MCG)/ML', '\\1', ANTIBIOTIC),
       stringi::stri_detect_regex(pattern='.+ \\([0-9]+\\.[0-9]+\\)',                                                 str=ANTIBIOTIC) ~ gsub('(.+) \\([0-9]+\\.[0-9]+\\)', '\\1', ANTIBIOTIC),
       stringi::stri_detect_regex(pattern='PENICILLIN \\((MENINGITIS|NON MENINGITIS|ORAL|PNEUMONIA|OTHER|E-TEST)\\)', str=ANTIBIOTIC) ~ 'PENICILLIN',
@@ -79,18 +83,21 @@ astrDF <- astrDF %>%
       stringi::stri_detect_regex(pattern='AMP', str=ANTIBIOTIC) & stringi::stri_detect_regex(pattern='SULBAC', str=ANTIBIOTIC) ~ 'AMPICILLIN/SULBACTAM',
       stringi::stri_detect_regex(pattern='TICARCILLIN', str=ANTIBIOTIC) & stringi::stri_detect_regex(pattern='CLAVULANATE', str=ANTIBIOTIC) ~ 'TICARCILLIN/CLAVULANATE',
       .default = ANTIBIOTIC
-   )) %>%
-   filter(!ANTIBIOTIC %in% c('COMMENT:', 'ORGANISM', 'NA', 'ACYCLOVIR'))
+   ))
+w <- which(abx_names$ABX %in% c('COMMENT:', 'ORGANISM', 'NA', 'ACYCLOVIR') | is.na(abx_names$ANTIBIOTIC)) # 5
+abx_names <- abx_names[-w,] %>% select(-n) %>% distinct()
+abx_names <- setNames(abx_names$ABX,
+                      abx_names$ANTIBIOTIC)
+rm(w)
+w <- which(astrDF$ANTIBIOTIC %in% c('COMMENT:', 'ORGANISM', 'NA', 'ACYCLOVIR') | is.na(astrDF$ANTIBIOTIC)) # 34
+astrDF$ANTIBIOTIC[w] <- 'Unknown'
+astrDF$ANTIBIOTIC <- unname(abx_names[astrDF$ANTIBIOTIC])
 
 
-# arrange the data
-astrDF <- astrDF %>%
-   arrange(PERSON_ID, ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC)
-
-# to collapse identical results (ignoring LINE_NUM and RESULT_DATE)
 astrDF <- astrDF %>%
    select(-LINE_NUM) %>%
-   distinct() # 21,518,066 --> 21,486,921
+   distinct()
+
 
 # if same antibiotic tested against same pathogen on same order, take maximum
 astrDF <- astrDF %>% group_by(ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC)
@@ -98,23 +105,28 @@ astrDFm <- astrDF %>% filter(n() > 1L)  # 16,461 (8,222 groups)
 astrDFm <- astrDFm %>% slice_max(STATUS) # 11,852 (8,222 groups) - still some with much later result_dates
 astrDFm <- astrDFm %>% slice_min(RESULT_DATE) # 8,222
 astrDFm <- ungroup(astrDFm)
-astrDF <- rbind(astrDF %>% filter(n() == 1L) %>% ungroup(), astrDFm) %>%
+astrDF <- rbind(
+   astrDF %>% filter(n() == 1L) %>% ungroup(), 
+   astrDFm
+) %>%
    arrange(PERSON_ID, ORDER_PROC_ID, PATH_NAME, ANTIBIOTIC) # 21,501,852
-rm(astrDFm)
+rm(astrDFm); gc()
 
 
 # check for missingness
 sapply(astrDF, function(x) sum(is.na(x)))
 astrDF %>% count(is.na(PATH_NAME), is.na(ANTIBIOTIC), is.na(STATUS))
-astrDF %>% count(is.na(STATUS)) # 1,650,202
+astrDF$ANTIBIOTIC[which(is.na(astrDF$ANTIBIOTIC))] <- 'Unknown'
+astrDF$ANTIBIOTIC[which(astrDF$ANTIBIOTIC == 'PAS')] <- 'Unknown'
 
 
 # get all antibiotic names
-abx <- unique(astrDF$ANTIBIOTIC)
-save(abx, file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/ast_antibiotics.Rdata')
+abx <- sort(unique(astrDF$ANTIBIOTIC))
+abx <- abx[abx != 'Unknown']
+save(abx, file = '~/Desktop/EHR-mining/UsefulDataForCleaning/antibiotic_names/ast_antibiotics.Rdata')
 
 ######################################################################################
-save(astrDF, file = paste0(data_path_name, 'lab_micro_sens_all_cleaned_long.Rdata'))
+save(astrDF, file = '~/Desktop/EHR/EHR work/RdataFiles/lab_micro_sens_all_cleaned_long.Rdata')
 print(Sys.time() - start) # ~14.5 minutes
 ######################################################################################
 
@@ -146,36 +158,66 @@ astrDF <- astrDF %>%
    ))
 
 
+astrDF <- astrDF %>% 
+   select(-Unknown) %>%
+   mutate(CEPHALEXIN = NA)
+
+astrDF <- astrDF %>%
+   mutate(across(.cols = CEFEPIME:CEPHALEXIN,
+                 .fns = as.integer))
+
+
 
 # i think some of the enterobacterales I called ESBL-producing may not actually be
 # probably the ones that were missing CRO and were tested against any carbapenem
-astrDF_og <- astrDF
-# w <- which(grepl('esbl|extended spectrum beta lactamase', astrDF$PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', astrDF$PATH_NAME))
+ent <- c("Escherichia coli", 
+         "Enterobacter aerogenes", "Enterobacter cloacae",
+         "Citrobacter freundii", 
+         "Klebsiella aerogenes", "Klebsiella oxytoca", "Klebsiella pneumoniae", "Klebsiella variicola", 
+         "Morganella morganii",
+         "Proteus mirabilis",
+         "Serratia marcescens")
+enDF <- astrDF %>% filter(BUG %in% ent)
+w <- which(grepl('esbl|extended spectrum beta lactamase', astrDF$PATH_NAME) 
+           & !grepl('not an ?esbl|low dilution esbl|possible esbl', astrDF$PATH_NAME)) # 41,203
+
+astrDF$ESBL <- 0L
+astrDF$ESBL[w] <- 1L
+
+w <- which(astrDF$CEFTRIAXONE == 1L & astrDF$BUG %in% ent) # 54,193
+
+astrDF$ESBL[w] <- 1L
 
 
-astrDF <- astrDF %>%
-   mutate(ENT = BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Pseudomonas aeruginosa', 'Proteus mirabilis', 'Proteus penneri',
-                           "Enterobacter cloacae", "Klebsiella oxytoca", "Serratia marcescens", "Enterobacter aerogenes", "Klebsiella aerogenes",
-                           "Proteus vulgaris"),
-          ESBL_FLAG = grepl('esbl|extended spectrum beta lactamase', PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', PATH_NAME)) %>%
-   mutate(ESBL = ENT & (ESBL_FLAG | CEFTRIAXONE == 1)) %>%
-   mutate(ESBL = case_when(
-      is.na(ESBL) ~ 0,
-      ESBL ~ 1,
-      !ESBL ~ 0
-   )) %>%
-   select(-ENT, -ESBL_FLAG)
 
-bugs <- astrDF %>% count(BUG, sort=TRUE)
 
-astrDF <- astrDF %>%
-   mutate(EKR = BUG %in% c("Klebsiella pneumoniae", "Klebsiella oxytoca", "Klebsiella variicola", "Klebsiella species", "Klebsiella ozaenae", "Klebsiella ornithinolytica",
-                           'Escherichia coli', "Raoultella planticola", "Raoultella ornithinolytica", "Raoultella species")) %>% # E coli, Klebsiella, Raoultella
-   mutate(ESBL2 = EKR & (CEFEPIME == 1L | CEFOTAXIME == 1L | CEFTRIAXONE == 1L | CEFTAZIDIME == 1L)) # resistant to 3rd or 4th gen cephalosporins
-
-w <- which(astrDF$EKR & astrDF$ESBL2 & astrDF$ESBL == 0L)
-astrDF$ESBL[w] <- 1
-astrDF <- astrDF %>% select(-EKR, -ESBL2)
+# astrDF_og <- astrDF
+# # w <- which(grepl('esbl|extended spectrum beta lactamase', astrDF$PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', astrDF$PATH_NAME))
+# 
+# 
+# astrDF <- astrDF %>%
+#    mutate(ENT = BUG %in% c("Escherichia coli", "Klebsiella pneumoniae", 'Pseudomonas aeruginosa', 'Proteus mirabilis', 'Proteus penneri',
+#                            "Enterobacter cloacae", "Klebsiella oxytoca", "Serratia marcescens", "Enterobacter aerogenes", "Klebsiella aerogenes",
+#                            "Proteus vulgaris"),
+#           ESBL_FLAG = grepl('esbl|extended spectrum beta lactamase', PATH_NAME) & !grepl('not an ?esbl|low dilution esbl|possible esbl', PATH_NAME)) %>%
+#    mutate(ESBL = ENT & (ESBL_FLAG | CEFTRIAXONE == 1)) %>%
+#    mutate(ESBL = case_when(
+#       is.na(ESBL) ~ 0,
+#       ESBL ~ 1,
+#       !ESBL ~ 0
+#    )) %>%
+#    select(-ENT, -ESBL_FLAG)
+# 
+# bugs <- astrDF %>% count(BUG, sort=TRUE)
+# 
+# astrDF <- astrDF %>%
+#    mutate(EKR = BUG %in% c("Klebsiella pneumoniae", "Klebsiella oxytoca", "Klebsiella variicola", "Klebsiella species", "Klebsiella ozaenae", "Klebsiella ornithinolytica",
+#                            'Escherichia coli', "Raoultella planticola", "Raoultella ornithinolytica", "Raoultella species")) %>% # E coli, Klebsiella, Raoultella
+#    mutate(ESBL2 = EKR & (CEFEPIME == 1L | CEFOTAXIME == 1L | CEFTRIAXONE == 1L | CEFTAZIDIME == 1L)) # resistant to 3rd or 4th gen cephalosporins
+# 
+# w <- which(astrDF$EKR & astrDF$ESBL2 & astrDF$ESBL == 0L)
+# astrDF$ESBL[w] <- 1
+# astrDF <- astrDF %>% select(-EKR, -ESBL2)
 
 
 # 
@@ -250,8 +292,6 @@ astrDF <- astrDF %>% select(-EKR, -ESBL2)
 # en %>% filter(!testCarba, !) %>% count(CEFTRIAXONE)
 
 
-astrDF <- astrDF %>%
-   select(!c(`NA`, PAS))
 
 
 
@@ -272,6 +312,5 @@ x %>%
              .by = year) %>%
    arrange(desc(year)) %>%
    print(n=21) # all bugs: doubled from 2.9 --> 5.1% over last 12 years
-   
-   
-   
+
+

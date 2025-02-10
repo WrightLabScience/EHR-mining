@@ -119,52 +119,57 @@ rm(w, w2)
 
 
 
-astoDF %>% count(is.na(ORDER_DATE)) # 8,656 (out of 7.7 million) - has RESULT_DATE, most SPECIMEN_COLLECTED_DATE, SPECIMEN_RECEIVED_DATE
+astoDF %>% count(is.na(ORDER_DATE)) # 10,312 (out of 8.1 million) - has RESULT_DATE, most SPECIMEN_COLLECTED_DATE, SPECIMEN_RECEIVED_DATE
 astoDF <- astoDF %>% 
    filter(!is.na(ORDER_DATE)) %>%
    select(!c(REFERENCE_UNIT, REFERENCE_LOW, REFERENCE_HIGH, COMPONENT_NAME, RESULT_LAB_NAME, SPECIMEN_COLLECTED_DATE, 
              SPECIMEN_RECEIVED_DATE, LOINC_CODE, ORDER_NAME, SPECIMEN_TYPE, RESULT_VALUE, SITE_SPECIMEN, SITE_ORDER)) %>%
-   distinct() %>% # 7,702,107 --> 6.6 million
+   distinct() %>% # 8,096,195 --> 6,895,485
    arrange(PERSON_ID, ORDER_DATE, ORDER_PROC_ID)
 
 # some order_proc_ids are blood, but blood wasn't assigned TRUE for all rows of that ID
 blood_order_ids <- unique(astoDF$ORDER_PROC_ID[astoDF$BLOOD])
-length(blood_order_ids) # 131,889
-length(unique(astoDF$ORDER_PROC_ID)) # 1,550,181
-table(astoDF$BLOOD[astoDF$ORDER_PROC_ID %in% blood_order_ids]) # 20,254 are FALSE!
+length(blood_order_ids) # 136,517
+length(unique(astoDF$ORDER_PROC_ID)) # 1,619,298
+table(astoDF$BLOOD[astoDF$ORDER_PROC_ID %in% blood_order_ids]) # 22,365 are FALSE!
 astoDF$BLOOD[astoDF$ORDER_PROC_ID %in% blood_order_ids] <- TRUE # no longer
 rm(blood_order_ids)
 
 # now same for respiratory cultures
 resp_order_ids <- unique(astoDF$ORDER_PROC_ID[astoDF$RESPIRATORY])
-length(resp_order_ids) # 110,788
-table(astoDF$RESPIRATORY[astoDF$ORDER_PROC_ID %in% resp_order_ids]) # 17,973 are FALSE!
+length(resp_order_ids) # 114,364
+table(astoDF$RESPIRATORY[astoDF$ORDER_PROC_ID %in% resp_order_ids]) # 19,565 are FALSE!
 astoDF$RESPIRATORY[astoDF$ORDER_PROC_ID %in% resp_order_ids] <- TRUE # no longer
 rm(resp_order_ids)
 
 gc()
 
 astoDF %>% count(BLOOD, RESPIRATORY)
+w <- which(astoDF$BLOOD & astoDF$RESPIRATORY)
+astoDF$RESPIRATORY[w] <- FALSE
+rm(w)
+
 
 
 # PATHOGEN NAMES
-source(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
+source(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/CleanPathogenNames/CleanPathogenNames.R')
 path_names <- astoDF %>%
    count(PATH_NAME, sort=TRUE) %>%
    filter(!is.na(PATH_NAME)) %>%
-   mutate(BUG = NA_character_) # ~482K !!
+   mutate(BUG = NA_character_) # 519,749
 path_names <- cleanPathogenNames(path_names)
 path_names <- path_names %>% filter(!is.na(BUG))
-path_names <- setNames(object = path_names$BUG, nm = path_names$PATH_NAME)
+path_names <- setNames(object = path_names$BUG, 
+                       nm = path_names$PATH_NAME) # 27,818
 astoDF <- astoDF %>%
    mutate(BUG = unname(path_names[PATH_NAME])) %>%
    select(-PATH_NAME) %>%
-   distinct() # 6,560,904 --> 3,023,425
+   distinct() # 6,895,485 --> 3,171,098
 rm(path_names, cleanPathogenNames)
 
 # CLEANING
 # remove instances where ORDER_DATE comes after RESULT_DATE - clear error
-astoDF <- astoDF %>% filter(RESULT_DATE > ORDER_DATE) # 3,019,845
+astoDF <- astoDF %>% filter(RESULT_DATE > ORDER_DATE) # 3,167,414
 
 # sometimes everything is identical, but one row has a MUCH later RESULT_DATE, take the minimum
 start <- Sys.time()
@@ -191,7 +196,7 @@ astoDF <- rbind(astoDF,
                 astoDF %>% 
                    filter(all(!is.na(BUG)), 
                           .by = c(PERSON_ID, ORDER_DATE, ORDER_PROC_ID, RESULT_DATE)) %>% 
-                   mutate(BUG = NA_character_)) # 3,074,903
+                   mutate(BUG = NA_character_)) # 3,223,538
 astoDF <- astoDF %>% arrange(PERSON_ID, ORDER_PROC_ID, ORDER_DATE, RESULT_DATE, BUG)
 
 

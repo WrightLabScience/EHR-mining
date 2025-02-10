@@ -92,9 +92,7 @@ rs <- rbind(
    )
 )
 
-rm(van_bugs)
-
-van_
+rm(van_S_bugs)
 
 rm(path)
 
