@@ -19,7 +19,7 @@ Cefpodoxime POD Cephalosporin
 Ceftaroline CPT Cephalosporin
 Ceftazidime CAZ Cephalosporin
 Ceftazidime/avibactam CZA Cephalosporin+adjuvant
-Ceftolozane/tazobactam C-T Cephalosporin+adjuvant
+Ceftolozane/tazobactam CFT Cephalosporin+adjuvant
 Ceftriaxone CRO Cephalosporin
 Cefuroxime CXM Cephalosporin
 Cephalothin CEF Cephalosporin
@@ -61,7 +61,7 @@ Penicillin PEN Penicillin
 Piperacillin PIP Penicillin
 Piperacillin-tazobactam TZP β-lactam+adjuvant
 Polymyxin_B PB Polymyxin
-Synercid Q-D Streptogramin
+Synercid SYN Streptogramin
 Rifampin RIF Rifamycin
 Streptomycin STR Aminoglycoside
 Tetracycline TET Tetracycline

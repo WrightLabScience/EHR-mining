@@ -1,10 +1,11 @@
-combineOverlappingEncounters <- function(encs) {
+combineOverlappingEncounters <- function(encs, please_arrange=FALSE) {
    if (!any(names(encs) == 'ADMIT_DAY'))
       encs$ADMIT_DAY <- lubridate::as_date(encs$ADMIT_DATE)
    if (!any(names(encs) == 'DISCHARGE_DAY'))
       encs$DISCHARGE_DAY <- lubridate::as_date(encs$DISCHARGE_DATE)
    
-   encs <- encs %>% arrange(PERSON_ID, ADMIT_DATE)
+   if (please_arrange)
+      encs <- encs %>% arrange(PERSON_ID, ADMIT_DATE)
    
    encs$SINCE <- as.integer(encs$ADMIT_DAY - lag(encs$DISCHARGE_DAY))
    encs$SINCE[encs$PERSON_ID != lag(encs$PERSON_ID)] <- NA

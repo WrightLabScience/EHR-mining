@@ -1,9 +1,20 @@
 # AST imputation function
 imputeASTs <- function(df) {
-   enterobacterales <- c('Escherichia coli', 'Klebsiella pneumoniae', 'Proteus mirabilis', 
-                         'Enterobacter cloacae', 'Klebsiella oxytoca', 'Serratia marcescens', 
-                         'Enterobacter aerogenes',
-                         'Klebsiella aerogenes', 'Klebsiella variicola', 'Citrobacter freundii', 'Morganella morganii')
+   load(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/bug_groups.Rdata')
+   
+   df <- df %>% filter(BUG %in% unname(unlist(bug_groups)))
+   
+   source('~/Desktop/EHR-mining/UsefulDataForCleaning/getAbxBugClassFxn.R')
+   df <- getBugClass(df)
+   
+   # check for throw away rows
+   w <- which(df$BUG == 'Staphylococcus aureus' & is.na(df$OXACILLIN))
+   if (length(w) > 0L) {
+      cat('Removed', length(w), 'missing SA rows.\n')
+      df <- df[-w,]
+   }
+   
+   enterobacterales <- bug_groups$Enterobacterales
    source('~/Desktop/EHR-mining/UsefulDataForCleaning/ASTimputation/EUCAST_expected_phenotypes.R')
    rs <- rs %>% 
       filter(BUG %in% unique(df$BUG),
@@ -267,10 +278,8 @@ imputeASTs <- function(df) {
    df$DOXYCYCLINE[w] <- 1L
    
    # still need cipro and levo
-   
    cat('\tEnterococci\n')
    
-   rm(rs)
    return(distinct(df))
 }
 

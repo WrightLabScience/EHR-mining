@@ -1,23 +1,33 @@
+bug_groups <- list(
+   Staphylococci = c("Staphylococcus aureus", "Staphylococcus lugdunensis"),
+   
+   Enterococci = c("Enterococcus faecalis", "Enterococcus faecium"),
+   
+   Streptococci = c("Streptococcus agalactiae", "Streptococcus pneumoniae", "Streptococcus pyogenes"),
+   
+   Enterobacterales = c("Escherichia coli", 
+                        "Enterobacter aerogenes", "Enterobacter cloacae",
+                        "Citrobacter freundii", 
+                        "Klebsiella aerogenes", "Klebsiella oxytoca", "Klebsiella pneumoniae", "Klebsiella variicola", 
+                        "Morganella morganii",
+                        "Proteus mirabilis",
+                        "Serratia marcescens"),
+   
+   NonFermGN = c("Pseudomonas aeruginosa", "Stenotrophomonas maltophilia", "Acinetobacter baumannii")
+)
+save(bug_groups, file = '~/Desktop/EHR-mining/UsefulDataForCleaning/bug_groups.Rdata')
+
 # function to get antibiotic class name and pathogen group names
 getBugClass <- function(df) {
-   bug_class <- list(
-      Enterobacterales = c('Escherichia coli', 'Klebsiella pneumoniae', 'Proteus mirabilis', 
-                           'Enterobacter cloacae', 'Klebsiella oxytoca', 'Serratia marcescens', 
-                           'Enterobacter aerogenes',
-                           'Klebsiella aerogenes', 'Klebsiella variicola', 'Citrobacter freundii', 'Morganella morganii'),
-      Staphylococci = grep('Staph', unique(df$BUG), value=TRUE),
-      Streptococci = grep('Strep', unique(df$BUG), value=TRUE),
-      Enterococci = grep('Enterococcus', unique(df$BUG), value=TRUE),
-      NonFermGN = c('Acinetobacter baumannii', 'Pseudomonas aeruginosa', 'Stenotrophomonas maltophilia')
-   )
-   bug_class_named <- setNames(
-      gsub('[0-9]+$', '', names(unlist(bug_class))),
-      unname(unlist(bug_class))
+   bug_groups_named <- setNames(
+      gsub('[0-9]+$', '', names(unlist(bug_groups))),
+      unname(unlist(bug_groups))
    )
    
    df <- df %>% 
-      mutate(BUGC = unname(bug_class_named[BUG])) %>%
+      mutate(BUGC = unname(bug_groups_named[BUG])) %>%
       relocate(BUGC, .after=BUG)
+   
    return(df)
 }
 abx_class <- list(
@@ -38,7 +48,7 @@ abx_class <- list(
    lincosamide = c('CLINDAMYCIN'),
    aminoglycoside = c('GENTAMICIN', 'TOBRAMYCIN', 'NEOMYCIN', 'AMIKACIN'),
    tetracycline = c('DOXYCYCLINE', 'TIGECYCLINE', 'TETRACYCLINE', 'MINOCYCLINE', 'ERAVACYCLINE', 'DEMECLOCYCLINE'),
-   fluoroquinolone = c('CIPROFLOXACIN', 'LEVOFLOXACIN', 'MOXIFLOXACIN', 'GATIFLOXACIN', 'OFLOXACIN'),
+   fluoroquinolone = c('CIPROFLOXACIN', 'LEVOFLOXACIN', 'MOXIFLOXACIN', 'GATIFLOXACIN', 'OFLOXACIN', 'DELAFLOXACIN'),
    glycopeptide = c('VANCOMYCIN', 'TELAVANCIN', 'DALBAVANCIN', 'ORITAVANCIN'), 
    oxazolidinone = c('LINEZOLID'), 
    lipopeptide = c('DAPTOMYCIN'), 
@@ -53,6 +63,7 @@ abx_class <- list(
    antiFungal = c('CASPOFUNGIN', 'FLUCONAZOLE', 'METRONIDAZOLE', 'VORICONAZOLE', 'POSACONAZOLE', 'CLOTRIMAZOLE', 'MICAFUNGIN', 
                    'KETOCONAZOLE', 'AMPHOTERICIN', 'TERBINAFINE', 'ITRACONAZOLE', 'FLUCYTOSINE', 'GRISEOFULVIN', 'NATAMYCIN')
 )
+save(abx_class, file = '~/Desktop/EHR-mining/UsefulDataForCleaning/antibiotic_names/abx_classes.Rdata')
 
 getAbxClass <- function(df) {
    abx_class_named <- setNames(gsub(pattern = '[0-9]+$', 
