@@ -1,0 +1,6 @@
+Therapy	n
+FID	131
+VAN	4204
+both	239
+no abx	7855
+other	1086

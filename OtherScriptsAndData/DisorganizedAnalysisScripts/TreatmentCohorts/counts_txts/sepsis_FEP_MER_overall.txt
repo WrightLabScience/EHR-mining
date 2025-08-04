@@ -1,0 +1,6 @@
+OverallTherapy	n
+FEP	15046
+MER	4585
+both	2465
+noAbx	8460
+otherAbx	31888

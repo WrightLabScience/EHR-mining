@@ -1,0 +1,4 @@
+DefinitiveTherapy	n
+FLQ	1936
+both	3879
+other	34417

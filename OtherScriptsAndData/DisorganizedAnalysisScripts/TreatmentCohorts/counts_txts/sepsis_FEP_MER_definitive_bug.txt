@@ -1,0 +1,5 @@
+DefinitiveTherapy	n
+FEP	6524
+MER	3016
+both	882
+otherAbx	19275

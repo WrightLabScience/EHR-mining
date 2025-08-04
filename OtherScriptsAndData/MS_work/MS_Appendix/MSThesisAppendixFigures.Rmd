@@ -1,0 +1,165 @@
+---
+title: "MSThesisFigures"
+author: 'Samuel Blechman'
+date: "`r Sys.Date()`"
+output: # html_document
+  pdf_document:
+     toc: true
+     toc_depth: 3
+  pdf: default
+---
+\newpage
+
+
+
+### Figures 1-8. Covariate balance.
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/E_coli_CRO_TZP_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 1. *E. coli* - CRO vs. TZP.
+\newpage
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/K_pneumoniae_CRO_TZP_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 2. *K. pneumoniae* - CRO vs. TZP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/P_mirabilis_CRO_TZP_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 3. *P. mirabilis* - CRO vs. TZP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/P_aeruginosa_FEP_TZP_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 4. *P. aeruginosa* - FEP vs. TZP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/S_aureus_OXA_CFZ_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 5. *S. aureus* - OXA vs. CFZ.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/S_aureus_MRSA_switch_VAN_DAP_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 6. *S. aureus* (MRSA) - VAN vs. switch to DAP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/E_faecalis_switch_VAN_AMP_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 7. *E. faecalis* - VAN vs. switch to AMP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/treatment/E_faecium_VRE_DAP_LZD_treatment_COMPARISON.pdf', rel_path=FALSE)
+```
+
+#### Figure 8. *E. faecium* (VRE) - DAP vs. LZD.
+\newpage
+
+
+
+
+
+
+### Figures 9-16. Treatment effect heterogeneity and conditional average treatment effect estimates
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/E. coli - CRO vs. TZP.pdf', rel_path=FALSE)
+```
+
+#### Figure 9 *E. coli* - CRO vs. TZP.
+\newpage
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/K. pneumoniae - CRO vs. TZP.pdf', rel_path=FALSE)
+```
+
+#### Figure 10. *K. pneumoniae* - CRO vs. TZP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/P. mirabilis - CRO vs. TZP.pdf', rel_path=FALSE)
+```
+
+#### Figure 11. *P. mirabilis* - CRO vs. TZP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/P. aeruginosa - FEP vs. TZP.pdf', rel_path=FALSE)
+```
+
+#### Figure 12. *P. aeruginosa* - FEP vs. TZP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/S. aureus - OXA vs. CFZ.pdf', rel_path=FALSE)
+```
+
+#### Figure 13. *S. aureus* - OXA vs. CFZ.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/S. aureus (MRSA) - VAN vs. switch to DAP.pdf', rel_path=FALSE)
+```
+
+#### Figure 14. *S. aureus* (MRSA) - VAN vs. switch to DAP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/E. faecalis - VAN vs. switch to AMP.pdf', rel_path=FALSE)
+```
+
+#### Figure 15. *E. faecalis* - VAN vs. switch to AMP.
+\newpage
+
+
+
+```{r, echo=FALSE, out.width='440pt', out.height='440pt', fig.align = 'center'}
+knitr::include_graphics(path='~/Desktop/EHR-mining/BuildCohortDatasets/Plots/Trees/E. faecium (VRE) - DAP vs. LZD.pdf', rel_path=FALSE)
+```
+
+#### Figure 16. *E. faecium* (VRE) - DAP vs. LZD.
+
+
+
+
+
+

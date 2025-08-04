@@ -1,0 +1,258 @@
+---
+title: "Sepsis_compare_cohorts"
+output: html_document
+date: "2024-11-15"
+---
+
+```{r fig.width=9, fig.height=9.5}
+library(dplyr)
+library(survival)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/causal_prep/Sepsis/Sepsis_AllData.Rdata')
+source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/KaplanMeierCurveFxns.R')
+source('~/Desktop/WrightLab/UsefulRfuncs/newBarplotFxn.R')
+source('~/Desktop/EHR/EHR-mining/Scripts/AnalysisScripts/DrawTableOneFxn.R')
+cex <- 1.5
+
+col_vec <- c('CRO' = "#000000", 'FEP' = "#0000FF", 'MEM' = "#ef5675", 'TZP' = "#ffa600", 'all' = '#999999')
+
+dfx <- dfx %>%
+   select(-TZP, -CRO, -FEP, -MEM) %>%
+   filter(TRT %in% c('PIPERACILLIN/TAZOBACTAM', 'CEFTRIAXONE', 'CEFEPIME', 'MEROPENEM')) %>%
+   mutate(TRT = case_when(
+      TRT == 'PIPERACILLIN/TAZOBACTAM' ~ 'TZP',
+      TRT == 'CEFEPIME' ~ 'FEP',
+      TRT == 'CEFTRIAXONE' ~ 'CRO',
+      TRT == 'MEROPENEM' ~ 'MEM'
+   ))
+
+
+site_names <- c("CHP" = 'Childrens', 
+                "UPMCALT" = 'Altoona', 
+                "UPMCBED" = 'Bedford', 
+                "UPMCCHA" = 'Chatauqua', 
+                "UPMCEAS" = 'East',
+                "UPMCHAM" = 'Hamot', 
+                "UPMCHZN" = 'Horizon',
+                "UPMCJAM" = 'Jameson', 
+                "UPMCMCK" = 'McKeesport', 
+                "UPMCMER" = 'Mercy', 
+                "UPMCMUN" = '', 
+                "UPMCMWH" = 'Magee-Womens', 
+                "UPMCNOR" = 'Northwest', 
+                "UPMCPAS" = 'Passavant', 
+                "UPMCPUH" = 'Presbyterian', 
+                "UPMCSHY" = 'Shadyside', 
+                "UPMCSMH" = 'St. Margaret', 
+                "UPMCSOL" = 'SOL', 
+                "UPMCSUN" = 'SUN', 
+                'UPMCLOC' = 'LOC',
+                "UPMCWIL" = 'Williamsport')
+
+
+t <- dfx %>% 
+   filter(!grepl(',', FACILITY)) %>% 
+   mutate(FACILITY = site_names[FACILITY]) %>%
+   summarise(n = n(),
+             nD30 = sum(time_censored < 30),
+             nTZP = sum(TRT == 'TZP'),
+             nCRO = sum(TRT == 'CRO'),
+             nFEP = sum(TRT == 'FEP'),
+             nMEM = sum(TRT == 'MEM'),
+             fTZP = nTZP / n,
+             fCRO = nCRO / n,
+             fFEP = nFEP / n,
+             fMEM = nMEM / n,
+             fD30 = nD30 / n,
+             .by=FACILITY) %>%
+   arrange(desc(n)) %>% 
+   filter(n >= 100)
+
+par(mfrow=c(2,1), oma=c(0,0,0,0), mar=c(4,4,1,1))
+plot(NA, xlim=c(0,0.7), ylim=c(0,0.2), xlab='Abx use', ylab='30-day mortality')
+for (abx in names(col_vec)[1:4]) {
+   x <- t[[paste0('f', abx)]]
+   n <- t[[paste0('n', abx)]]
+   y <- t$fD30
+   points(x=x, y=y, pch=16, col=col_vec[abx])
+   l <- lm(y ~ x, weights=n)
+   abline(l, col=col_vec[abx])
+}
+
+
+t <- t %>% arrange(desc(fTZP))
+h <- t(as.matrix(t %>% select(fTZP:fMEM)))
+colnames(h) <- t$FACILITY
+cs <- cumsum(c(0, h[,ncol(h)]))
+
+par(mar=c(4,8,1,6))
+b <- barplot(h, horiz=TRUE, col=paste0(col_vec, 'aa'), names.arg=rep('', ncol(h)), xaxt='n')
+text(x=-0.025, y=b, labels=colnames(h), adj=1, xpd=NA)
+text(x=cs[-length(cs)] + diff(cs) / 2, y=b[length(b)]+unique(diff(round(b,1))), labels=gsub('f', '', rownames(h)), xpd=NA)
+text(x=1.025, y=b, adj=0, xpd=NA, labels=t$n)
+
+
+
+## Plot when start abx and how many total days ##
+par(mfrow=c(4,2), cex=cex-0.3, mar=c(2,3.5,3,3), mgp = c(1.5, 0.2, 0))
+for (abx in unique(dfx$TRT)) {
+   dfx %>% filter(TRT == abx) %>% pull(FIRST_ABX_DAY) %>% plotBarplot(main=abx, xlab='First abx day (relative to sepsis dx)')
+   dfx %>% filter(TRT == abx) %>% pull(NUM_ABX_DAYS) %>% plotBarplot(main=abx, xlab='Num days abx administered')
+}
+## END ##
+
+
+## Plot trends in use over time ##
+trends <- dfx %>% mutate(year = lubridate::year(SEPSIS_DX_DATE)) %>% select(year, TRT) %>% table()
+yearSums <- apply(trends, 1, sum)
+trends_norm_year <- apply(trends, 1, function(x) x / sum(x) * 100)
+par(mfrow=c(2,1), tck=-0.015, mar=c(3, 2.5, 2, 1), mgp=c(1.75, 0.5, 0))
+plot(NA, xlim=c(2017, 2023), ylim=c(0, 70), yaxt='n', xlab='Year', ylab='', main='Normalized by year')
+axis(side=2, las=1, at=axTicks(2), labels=paste0(axTicks(2), '%'))
+for (i in seq_len(ncol(trends))) {
+   abx <- names(col_vec)[i]
+   lines(x=2017:2023, y=trends_norm_year[abx,], col=col_vec[abx], lwd=3)
+   points(x=2017:2023, y=trends_norm_year[abx,], col=col_vec[abx], pch=16, cex=1.5)
+}
+plot(NA, xlim=c(2017, 2023), ylim=c(0, max(trends)*1.1), yaxt='n', xlab='Year', ylab='', main='Total sepsis cases')
+axis(side=2, las=1)
+for (i in seq_len(ncol(trends))) {
+   abx <- names(col_vec)[i]
+   lines(x=2017:2023, y=trends[,abx], col=col_vec[i], lwd=3)
+   points(x=2017:2023, y=trends[,abx], col=col_vec[i], pch=16, cex=1.5)
+}
+legend('topright', legend=names(col_vec[c('CRO', 'FEP', 'MEM', 'TZP')]), col=col_vec[c('CRO', 'FEP', 'MEM', 'TZP')], lwd=3, pch=16, pt.cex=1.5)
+rm(trends, abx, i, yearSums, trends_norm_year)
+## END ##
+
+
+dfx <- dfx %>% mutate(SITE = site_names[FACILITY])
+sites <- unique(dfx$SITE[!grepl(',', dfx$FACILITY)])
+site_cols <- setNames(colorRampPalette(c('#482677', '#FDE725'))(length(sites)), sites)
+par(mfrow=c(2,1), mar=c(5,4,1,9), tck=-0.015)
+for (abx in unique(dfx$TRT)) {
+   t <- dfx %>% 
+      filter(!grepl(',', FACILITY)) %>%
+      mutate(year = lubridate::year(SEPSIS_DX_DATE)) %>%
+      filter(n() >= 35, .by=SITE) %>%
+      summarise(ABX = sum(TRT == abx) / n(),
+                .by = c(SITE, year)) %>%
+      tidyr::pivot_wider(names_from = year, values_from = ABX, values_fill = 0) %>%
+      select(SITE, `2017`, `2018`, `2019`, `2020`, `2021`, `2022`, `2023`)
+   n <- t$SITE
+   t <- as.matrix(t %>% select(-SITE))
+   rownames(t) <- n
+   plot(NA, xlim=c(2017, 2023), ylim=c(0,1), xlab='Year', ylab='DAP use')
+   for (s in seq_len(nrow(t))) {
+      lines(x=2017:2023, y=t[s,], col=site_cols[rownames(t)[s]], lwd=3)
+   }
+   # sites_order <- names(sort(t[,ncol(t)], decreasing=TRUE))
+   # legend('right', inset=c(-0.4, 0), bty='n', legend=sites_order, col=site_cols[sites_order], lwd=3, xpd=NA)
+   text(x=2023.3, y=t[,ncol(t)], adj=0, labels=rownames(t), xpd=NA)
+}
+
+
+
+
+
+## KAPLAN-MEIER CURVES
+par(mfrow=c(1,1), mar=c(18, 16, 18, 16))
+plotKP(df = dfx %>%
+          select(-time) %>% 
+          rename(time = time_censored),
+       cohort='Sepsis', col_vec=col_vec[c('CRO', 'FEP', 'MEM', 'TZP')])
+## END ##
+
+
+cohorts <- c('TZP vs. CRO', 'TZP vs. FEP', 'TZP vs. MEM',
+             'CRO vs. FEP', 'CRO vs. MEM',
+             'FEP vs. MEM',
+             'TZP vs. all', 'CRO vs. all', 'FEP vs. all', 'MEM vs. all')
+for (cohort in cohorts) {
+   print(cohort)
+   
+   trt <- unlist(strsplit(cohort, ' vs. ', fixed=TRUE))
+   if (trt[2] == 'all') {
+      df <- dfx %>% mutate(TRT = ifelse(TRT == trt[1], TRT, 'all'))
+   } else {
+      df <- dfx %>% filter(TRT %in% trt)
+   }
+   df <- df %>%
+      select(!c(FIRST_ABX_DAY, time)) %>% 
+      rename(time = time_censored)
+   
+   
+   # prep data to plot
+   d <- df %>% 
+      summarise(n = n(),
+                n14 = sum(time < 14),
+                f14 = n14 / n * 100,
+                n30 = sum(time < 30),
+                f30 = n30 / n * 100,
+                .by=TRT)
+   
+   h <- as.matrix(d %>% select(f14, f30) %>% slice(2:1))
+   b <- as.vector(barplot(h, plot=FALSE, beside=TRUE))
+   
+   
+   # PLOT
+   {
+      layout(mat=matrix(c(1,2,3,4,4,4), nrow=3), widths=c(1, 1.5))
+      par(mgp=c(2, 0.6, 0), mar=c(3, 4, 3.5, 3.5), tck=-0.015, oma=c(3,0,2,0), xpd=FALSE)
+      
+      # 30-day mortality
+      b <- barplot(h, beside=TRUE, names.arg=rep('', 2), cex.names=cex, cex.lab=cex, cex.main=cex, ylim=c(0, 25), yaxt='n')
+      title(main='All-cause mortality rates', line=1, cex.main=cex)
+      text(x=b, y=-1.25, cex=cex, labels=rev(trt), xpd=NA)
+      text(x=c(mean(b[1:2]), mean(b[3:4])), y=-3.6, cex=cex, labels=c('14-day', '30-day'), xpd=NA)
+      axis(side=2, las=1, cex.axis=cex, tck=-0.015, at=seq(0, 25, 5), labels=paste0(seq(0, 25, 5), '%'))
+      text(x=b, y=h+3.5, cex=cex, labels=paste0(round(h, 1), '%'))
+      text(x=b, y=h+1.5, cex=cex, labels=paste0('n=', unlist(d %>% select(n14, n30) %>% slice(2:1))))
+      
+      # survival curve
+      plotKP(df=df, cohort='30-day Kaplan-meier curves', trt=trt, cex=cex, col_vec=col_vec[trt])
+      
+      # imbalanced variables?
+      vars <- df %>% select(AGE:MRSA, NURSING_HOME, EMERGENCY_DEPT, SEPTIC_SHOCK:Smoking) %>% names
+      prop_model <- glm(formula = paste0('TRT ~ ', paste(vars, collapse=' + ')), 
+                        data = df %>% mutate(TRT = ifelse(TRT == trt[1], 1, 0)), 
+                        family = binomial(link = 'logit'))
+      prop_scores <- predict(prop_model, df %>% mutate(TRT = ifelse(TRT == trt[1], 1, 0)))
+      
+      # common support
+      d1 <- density(prop_scores[df$TRT == trt[1]])
+      d2 <- density(prop_scores[df$TRT == trt[2]])
+      plot(NA, xlim=range(c(d1$x, d2$x)), ylim=c(0, max(c(d1$y, d2$y))), yaxt='n', 
+           xlab='Propensity score logit', main='Common support', 
+           cex.main=cex, cex.lab=cex, cex.axis=cex, ylab='')
+      title(ylab='Density', cex.lab=cex, line=2.5)
+      axis(side=2, las=1, cex.axis=cex)
+      lines(d1, col=col_vec[trt[1]], lwd=3)
+      lines(d2, col=col_vec[trt[2]], lwd=3)
+      legend('topright', legend=trt, col=col_vec[trt], lwd=3, cex=cex)
+      
+      tOg <- tableone::CreateTableOne(vars=vars, strata='TRT', data=df)
+      p <- sapply(attributes(tOg$CatTable)$xtabs, function(t) {
+         x <- t[2,] / colSums(t)
+         d <- (x[trt[1]] - x[trt[2]]) * 100
+         return(c(d, t[2, trt[1]], t[2, trt[2]]))
+      })
+      rownames(p) <- c('diff', trt[1], trt[2])
+      p <- data.frame(t(p))
+      p$pval <- setNames(attributes(tOg$CatTable)$pValues[, 'pExact'], rownames(attributes(tOg$CatTable)$pValues))
+      rownames(p)[rownames(p) == 'GENDER'] <- 'Male'
+      a <- data.frame(diff = diff(tapply(df$AGE, df$TRT, mean)),
+                      NA, NA, 
+                      pval = as.vector(attributes(tOg$ContTable)$pValues[ ,'pNonNormal']))
+      rownames(a) <- 'Age*'
+      names(a)[2:3] <- trt
+      p <- rbind(p, a)
+      p <- p[order(p$diff), ]
+      print(range(p$diff))
+      
+      par(mar=c(3, 11, 2.5, 7))
+      drawTableOne(p, trt, 25)
+      
+      mtext(text=paste0(trt[2], ' (n = ', sum(df$TRT == trt[2]), '), ', trt[1], ' (n = ', sum(df$TRT == trt[1]), ')'), outer=TRUE, at=0.5, cex=cex-0.3, font=2)
+   }
+}
+```

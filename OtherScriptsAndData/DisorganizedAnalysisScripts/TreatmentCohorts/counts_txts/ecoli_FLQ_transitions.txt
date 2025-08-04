@@ -1,0 +1,16 @@
+EmpiricTherapy	DefinitiveTherapy	n
+other	 	28722
+other	other	28118
+ 	other	5343
+other	both	2447
+FLQ	 	2008
+both	other	848
+both	both	836
+both	 	782
+ 	FLQ	562
+FLQ	FLQ	552
+other	FLQ	472
+ 	both	431
+both	FLQ	350
+FLQ	both	165
+FLQ	other	108

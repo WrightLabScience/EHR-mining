@@ -1,0 +1,302 @@
+---
+title: "ResistanceSurvival"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r, fig.height=5.5, fig.width=5.5}
+library(dplyr)
+library(survival)
+load(file = '~/Desktop/EHR/EHR work/RdataFiles/ASTs_AbxAdmin_blood_2017_2023_imputed_encs_flagged_WIDE_survival.Rdata')
+load(file = '~/Desktop/EHR/EHR-mining/UsefulDataForCleaning/antibiotic_names/abbr_named.Rdata')
+abbr <- c(abbr, setNames('No abx', 'No abx'))
+abbr <- c(abbr, setNames('ESBL', 'ESBL'))
+abbr <- c(abbr, setNames('abx', 'abx'))
+
+# prep for survival
+censor_time <- 180
+empDF <- empDF %>%
+   rename(time = SURV_TIME) %>%
+   mutate(status = case_when(
+      is.na(time) | time > censor_time ~ 0,
+      .default = 1
+   )) %>%
+   mutate(time = case_when(
+      is.na(time) | time > censor_time ~ censor_time,
+      .default = time
+   )) %>%
+   mutate(disc = TIME_TO_CONC_STRICT > 24)
+
+# survival functions
+getVertices <- function(x, y) {
+   x <- c(0, x)
+   y <- c(1, y)
+   if (x[length(x)] < 730) {
+      x <- c(x, 730)
+      y <- c(y, y[length(y)])
+   }
+   return(list(x = c(x[1], rep(x[2:length(x)], each=2)),
+               y = c(rep(y[1:(length(y)-1)], each=2), y[length(y)])))
+}
+
+plotSurv <- function(x, y, s, d, col_vec, conf_int=TRUE) {
+   zval <- qnorm(1- (1-0.95)/2, 0,1)
+   for (i in seq_along(d)) {
+      xvals <- x[d[[i]]]
+      yvals <- y[d[[i]]]
+      svals <- s[d[[i]]]
+      v <- getVertices(xvals, yvals)
+      lines(x = v$x,
+            y = v$y,
+            col = col_vec[i], lwd=2)
+      vu <- getVertices(xvals, yvals + zval * svals)
+      vl <- getVertices(xvals, yvals - zval * svals)
+      if (conf_int) polygon(x=c(vu$x, rev(vu$x)), y=c(vu$y, rev(vl$y)), col=paste0(col_vec[i], '20'), border=NA)
+   }
+}
+
+ypos <- seq(0.575, 0.52, length.out=3)
+
+makeKPplotsByFLAG <- function(df, drug, flag, col_vec, main) {
+   w <- df$disc == flag
+   df <- df[w,]
+   if (length(drug) > 1L) drug <- 'abx'
+   sample_sizes <- table(df$drug)
+   sample_sizes <- sample_sizes[c('0', '1')]
+   fit <- survfit(Surv(df$time, df$status) ~ df$drug)
+   pval <- survdiff(Surv(df$time, df$status) ~ df$drug)$pvalue
+   d <- setNames(lapply(unique(summary(fit)$strata),
+                        function(x) which(summary(fit)$strata == x)),
+                 as.character(unique(summary(fit)$strata)))
+   s <- summary(fit)
+   xvals <- s$time
+   yvals <- s$surv
+   ste <- s$std.err
+   plot(NA, ylim=c(0.5,1), xlim=c(0, censor_time), xaxt='n', yaxt='n', xaxs='i', yaxs='i', xpd=NA, xlab='Days', ylab='Surviving fraction')
+   title(main=paste0(main, ' (n = ', prettyNum(nrow(df), big.mark=','), ')'), line=0.5)
+   plotSurv(xvals, yvals, ste, d, col_vec)
+   axis(side=1, at=seq(0, censor_time, 15))
+   axis(side=2, las=1)
+   abline(v=30, lty=2)
+   text(x=2, y=ypos[1], adj=0, labels=paste0('p = ', prettyNum(pval, digits=3, scientific=-1)), font=ifelse(pval<0.05, 2, 1))
+   text(x=2, y=ypos[2:3], adj=0, col=col_vec,
+        labels=paste0(names(col_vec), ' (n = ', prettyNum(sample_sizes, big.mark=','), ')'))
+}
+
+makeKPplotsByPhen <- function(df, drug, phen, col_vec, main) {
+   w <- which(df$drug == phen)
+   df <- df[w,]
+   if (length(drug) > 1L) drug <- 'abx'
+   sample_sizes <- table(df$disc)
+   sample_sizes <- sample_sizes[c('CONCORDANT', 'DISCORDANT')]
+   fit <- survfit(Surv(df$time, df$status) ~ df$disc)
+   pval <- survdiff(Surv(df$time, df$status) ~ df$disc)$pvalue
+   d <- setNames(sapply(unique(summary(fit)$strata),
+                        function(x) which(summary(fit)$strata == x)),
+                 as.character(unique(summary(fit)$strata)))
+   s <- summary(fit)
+   xvals <- s$time
+   yvals <- s$surv
+   ste <- s$std.err
+   plot(NA, ylim=c(0.5,1), xlim=c(0, censor_time), xaxt='n', yaxt='n', xaxs='i', yaxs='i', xpd=NA, xlab='Days', ylab='Surviving fraction')
+   title(main=paste0(main, ' (n = ', prettyNum(nrow(df), big.mark=','), ')'), line=0.5)
+   plotSurv(xvals, yvals, ste, d, col_vec)
+   axis(side=1, at=seq(0, censor_time, 15))
+   axis(side=2, las=1)
+   abline(v=30, lty=2)
+   text(x=2, y=ypos[1], adj=0, labels=paste0('p = ', prettyNum(pval, digits=3, scientific=-1)), font=ifelse(pval<0.05, 2, 1))
+   text(x=2, y=ypos[2:3], adj=0, col=col_vec,
+        labels=paste0(names(col_vec), ' (n = ', prettyNum(sample_sizes, big.mark=','), ')'))
+}
+
+makeKplots <- function(df, col_vec, main, conf_int=FALSE) {
+   sample_sizes <- table(df$disc, df$drug)
+   fit <- survfit(Surv(time, status) ~ drug + disc, data=df)
+   pval <- survdiff(Surv(time, status) ~ disc + drug, data=df)$pvalue
+   d <- setNames(sapply(unique(summary(fit)$strata),
+                        function(x) which(summary(fit)$strata == x)),
+                 as.character(unique(summary(fit)$strata)))
+   s <- summary(fit)
+   xvals <- s$time
+   yvals <- s$surv
+   ste <- s$std.err
+   col_vec <- setNames(colorRampPalette(colors=c('#0000FF', '#FF0000'))(4),
+                       c('S-CONC', 'S-DISC', 'R-CONC', 'R-DISC'))
+   ypos <- seq(0.62, 0.52, length.out=5)
+      
+   plot(NA, ylim=c(0.5,1), xlim=c(0, censor_time), xaxt='n', yaxt='n', xaxs='i', yaxs='i', xpd=NA, xlab='Days', ylab='Surviving fraction')
+   title(main = 'Bacteremia (common pathogens)')
+   plotSurv(xvals, yvals, ste, d, col_vec, conf_int)
+   axis(side=1, at=seq(0, censor_time, 15))
+   axis(side=2, las=1)
+   abline(v=30, lty=2)
+   text(x=1, y=ypos[1], adj=0, labels=paste0('p = ', prettyNum(pval, digits=3, scientific=-1)), font=ifelse(pval<0.05, 2, 1))
+   text(x=1, y=ypos[2:5], adj=0, col=col_vec,
+        labels=paste0(names(col_vec), ' (n = ', prettyNum(sample_sizes, big.mark=','), ')'))
+}
+
+combinePlots <- function(bug, drug) {
+   if (length(bug) == 1) {
+      w <- which(empDF$BUG == bug & !is.na(empDF[[drug]]) & !is.na(empDF$disc) & empDF$FLAGe %in% c('CONCORDANT', 'DISCORDANT'))
+      df <- empDF[w,] %>% select(time, status, !!drug, disc) %>% rename(drug = !!drug)
+   } else {
+      df <- tibble()
+      for (i in seq_along(bug)) {
+         b <- bug[i]
+         d <- drug[i]
+         w <- which(empDF$BUG == b & !is.na(empDF[[d]]) & !is.na(empDF$disc) & empDF$FLAGe %in% c('CONCORDANT', 'DISCORDANT'))
+         df <- rbind(df, empDF[w,] %>% select(time, status, !!d, disc) %>% rename(drug = !!d))
+      }
+   }
+   col_vec <- setNames(colorRampPalette(colors=c('#0000FF', '#FF0000'))(4),
+                       c('S-CONC', 'S-DISC', 'R-CONC', 'R-DISC'))
+   
+   makeKplots(df=df, col_vec=col_vec, main='', conf_int=FALSE)
+   
+   # makeKPplotsByPhen(df, drug, 0, col_vec[c('S-CONC', 'S-DISC')], 'Susceptible')
+   # makeKPplotsByPhen(df, drug, 1, col_vec[c('R-CONC', 'R-DISC')], 'Resistant')
+   # 
+   # makeKPplotsByFLAG(df, drug, FALSE, col_vec[c('S-CONC', 'R-CONC')], 'Empiric concordant')
+   # makeKPplotsByFLAG(df, drug, TRUE,  col_vec[c('S-DISC', 'R-DISC')], 'Empiric discordant')
+   
+   mtext(text=c(paste(gsub('([A-Z])[a-z]+ ([a-z]+)', '\\1. \\2', bug), collapse=', '),
+                paste(drug, collapse=', ')),
+         outer=TRUE, line=c(0.5, -0.5), font=4)
+}
+
+
+par(mfrow=c(1,1), #mfrow=c(2,2), 
+    oma=c(0,1,2,0.25), cex=1, mar=c(3, 2, 2, 1), mgp=c(1.75, 0.35, 0),
+    cex.main=1, cex.axis=1, cex.lab=1, tck=-0.01)
+combinePlots(bug='Staphylococcus aureus', drug='OXACILLIN')
+combinePlots(bug='Escherichia coli', drug='ESBL')
+combinePlots(bug='Klebsiella pneumoniae', drug='ESBL')
+combinePlots(bug='Pseudomonas aeruginosa', drug='PIPERACILLIN/TAZOBACTAM')
+combinePlots(bug='Enterococcus faecium', drug='VANCOMYCIN')
+combinePlots(bug=c('Staphylococcus aureus', 'Escherichia coli', 'Klebsiella pneumoniae', 'Pseudomonas aeruginosa',  'Enterococcus faecium', 'Proteus mirabilis', 'Enterobacter cloacae'), 
+             drug=c('OXACILLIN',            'ESBL',             'ESBL',                  'PIPERACILLIN/TAZOBACTAM', 'VANCOMYCIN',           'ESBL',              'ESBL'))
+
+
+# put all 4 on the same plot
+plotSurv <- function(x, y, s, d, col_vec, conf_int=TRUE) {
+   zval <- qnorm(1- (1-0.95)/2, 0,1)
+   for (i in seq_along(d)) {
+      xvals <- x[d[[i]]]
+      yvals <- y[d[[i]]]
+      svals <- s[d[[i]]]
+      v <- getVertices(xvals, yvals)
+      lines(x = v$x,
+            y = v$y,
+            col = col_vec[i], lwd=2)
+      vu <- getVertices(xvals, yvals + zval * svals)
+      vl <- getVertices(xvals, yvals - zval * svals)
+      if (conf_int) polygon(x=c(vu$x, rev(vu$x)), y=c(vu$y, rev(vl$y)), col=paste0(col_vec[i], '20'), border=NA)
+   }
+}
+
+bug <- c('Staphylococcus aureus', 'Escherichia coli', 'Klebsiella pneumoniae', 'Pseudomonas aeruginosa',  'Enterococcus faecium', 'Proteus mirabilis', 'Enterobacter cloacae')
+drug <- c('OXACILLIN',            'ESBL',             'ESBL',                  'PIPERACILLIN/TAZOBACTAM', 'VANCOMYCIN',           'ESBL',              'ESBL')
+df <- tibble()
+for (i in seq_along(bug)) {
+   b <- bug[i]
+   d <- drug[i]
+   w <- which(empDF$BUG == b & !is.na(empDF[[d]]) & !is.na(empDF$disc) & empDF$FLAGe %in% c('CONCORDANT', 'DISCORDANT'))
+   df <- rbind(df, empDF[w,] %>% select(time, status, !!d, TIME_TO_CONC_STRICT, AGE) %>% rename(res = !!d))
+}
+
+df <- df %>% mutate(delay = TIME_TO_CONC_STRICT / 24)
+
+coxph(Surv(time, status) ~ delay, data=df)
+coxph(Surv(time, status) ~ res, data=df)
+coxph(Surv(time, status) ~ res + delay, data=df)
+
+sample_sizes <- table(df$disc, df$drug)
+fit <- survfit(Surv(time, status) ~ drug + disc, data=df)
+
+pval <- survdiff(Surv(time, status) ~ disc + drug, data=df)$pvalue
+d <- setNames(sapply(unique(summary(fit)$strata),
+                     function(x) which(summary(fit)$strata == x)),
+              as.character(unique(summary(fit)$strata)))
+s <- summary(fit)
+xvals <- s$time
+yvals <- s$surv
+ste <- s$std.err
+col_vec <- setNames(colorRampPalette(colors=c('#0000FF', '#FF0000'))(4),
+                    c('Susc., <24h', 'Susc., >24delay', 'Res., <24h', 'Res., >24delay'))
+#ypos <- seq(0.62, 0.52, length.out=5)
+ypos <- seq(0.8, 0.7575, length.out=5)
+
+par(mfrow=c(1,1),
+    oma=c(0,1,2,0.25), cex=1, mar=c(3, 2.5, 2, 1), mgp=c(2.25, 0.35, 0),
+    cex.main=1, cex.axis=1, cex.lab=1, tck=-0.01)
+plot(NA, ylim=c(0.75,1), xlim=c(0, censor_time), xaxt='n', yaxt='n', xaxs='i', yaxs='i', xpd=NA, xlab='', ylab='Surviving fraction')
+title(xlab='Days', line=1.6)
+title(main = 'Bacteremia (common pathogens)')
+plotSurv(xvals, yvals, ste, d, col_vec, conf_int=FALSE)
+axis(side=1, at=seq(0, censor_time, 15))
+axis(side=2, las=1)
+abline(v=30, lty=2)
+text(x=0.25, y=ypos[1], adj=0, labels=paste0('p = ', prettyNum(pval, digits=3, scientific=-1)), font=ifelse(pval<0.05, 2, 1))
+text(x=0.25, y=ypos[2:5], adj=0, col=col_vec,
+     labels=paste0(names(col_vec), ' (n = ', prettyNum(sample_sizes, big.mark=','), ')'))
+```
+
+
+
+
+
+```{r}
+df <- empDF %>%
+   filter(FLAGe %in% c('CONCORDANT', 'DISCORDANT'),
+          !is.na(GENDER))
+coxph(Surv(time, status) ~ FLAGe, df)     # 3.3e-9
+coxph(Surv(time, status) ~ GENDER, df)    # 2.4e-10
+coxph(Surv(time, status) ~ AGE, df)       # <2e-16
+coxph(Surv(time, status) ~ FLAGe + GENDER + AGE, df)
+# FLAGe  2.1e-7
+# Gender 3.4e-8
+# Age    <2e-16
+
+
+df <- empDF %>% 
+   filter(BUG == 'Staphylococcus aureus', 
+          FLAGe %in% c('CONCORDANT', 'DISCORDANT'),
+          !is.na(GENDER))
+coxph(Surv(time, status) ~ OXACILLIN, df) # 0.0445
+coxph(Surv(time, status) ~ FLAGe, df)     # 0.731
+coxph(Surv(time, status) ~ GENDER, df)    # 0.986
+coxph(Surv(time, status) ~ AGE, df)       # <2e-16
+coxph(Surv(time, status) ~ OXACILLIN + FLAGe + GENDER + AGE, df)
+# OXA    0.002
+# FLAGe  0.006
+# Gender 0.434
+# Age    <2e-16
+
+
+df <- empDF %>% 
+   filter(BUG == 'Escherichia coli', 
+          FLAGe %in% c('CONCORDANT', 'DISCORDANT'),
+          !is.na(GENDER))
+coxph(Surv(time, status) ~ ESBL, df)      # 5.0e-8
+coxph(Surv(time, status) ~ FLAGe, df)     # 2.3e-6
+coxph(Surv(time, status) ~ GENDER, df)    # <2e-16
+coxph(Surv(time, status) ~ AGE, df)       # <2e-16
+coxph(Surv(time, status) ~ ESBL + FLAGe + GENDER + AGE, df)
+# OXA    0.006
+# FLAGe  0.149
+# Gender 2.8e-15
+# Age    <2e-16
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,6 @@
+PathogenIDedTherapy	n
+FEP	9198
+MER	3077
+both	1681
+noAbx	1704
+otherAbx	18816

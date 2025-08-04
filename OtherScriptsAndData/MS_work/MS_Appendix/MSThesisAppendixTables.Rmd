@@ -1,0 +1,429 @@
+---
+title: "MSThesisAppendix"
+author: 'Samuel Blechman'
+date: "`r Sys.Date()`"
+output: 
+   html_document:
+      toc: true
+      toc_depth: 4
+      toc_float:
+         collapsed: true
+---
+
+
+```{r, echo=FALSE}
+library(knitr)
+library(kableExtra)
+library(DiagrammeR)
+```
+<br />
+<br />
+
+
+
+### Table 1. List of antibiotic names and abbreviations.
+```{r, echo=FALSE, out.width='500pt', fig.align='left'}
+load(file='~/Desktop/EHR-mining/UsefulDataForCleaning/antibiotic_names/abx_abbr_matrix.Rdata')
+kable(abx_mat, "html", escape = TRUE) %>%
+   kable_styling(full_width = FALSE, position='left')
+```
+<br />
+<br />
+
+
+
+### Table 2. List of antibiotic groupings and corresponding antibiotic names.
+```{r, echo=FALSE, out.width='500pt', fig.align='left'}
+load(file='~/Desktop/EHR-mining/BuildCohortDatasets/OtherScriptsAndData/abx_groupings_matrix.Rdata')
+kable(abx_mat, "html", escape = TRUE) %>%
+   kable_styling(full_width = FALSE, position='left') %>%
+   column_spec(2, width = "30em", extra_css = "word-wrap: break-word;")
+```
+<br />
+<br />
+
+
+
+### Table 3. List of pathogens.
+```{r, echo=FALSE, out.width='500pt', fig.align='left'}
+load(file='~/Desktop/EHR-mining/UsefulDataForCleaning/bug_group_matrix.Rdata')
+kable(bug_mat, "html", escape = TRUE) %>%
+   kable_styling(full_width = FALSE, position='left') %>%
+   column_spec(2, width = "40em", extra_css = "word-wrap: break-word;")
+```
+<br />
+<br />
+
+
+
+### Table 4. List of UPMC facilities and facility cateogories.
+```{r, echo=FALSE, out.width='500pt', fig.align='left'}
+load(file = '~/Desktop/EHR-mining/UsefulDataForCleaning/facility_category_matrix.Rdata')
+kable(fac_mat, "html", escape = TRUE) %>%
+   kable_styling(full_width = FALSE, position='left') %>%
+   column_spec(2, width = "30em")
+```
+<br />
+<br />
+
+
+
+### Table 5. Comorbidity covariates and corresponding ICD-10 code(s).
+```{r, echo=FALSE, out.width='500pt', fig.align='left'}
+load(file='~/Desktop/EHR-mining/UsefulDataForCleaning/ICDcodes_covariates_matrix.Rdata')
+kable(mat, "html", escape = TRUE) %>%
+   kable_styling(full_width = FALSE, position='left') %>%
+   column_spec(2, width = "40em", extra_css = "word-wrap: break-word;")
+```
+<br />
+<br />
+
+
+
+### Figures 1-8. Cohort exclusion filtering sample sizes.
+```{r, echo=FALSE, out.width='425pt', fig.align='left'}
+build_flowchart <- function(steps_df, final_split = NULL, title = NULL) {
+   nodes <- ""
+   edges <- ""
+   final_split <- rev(final_split)
+   
+   # Define nodes
+   for (i in seq_len(nrow(steps_df))) {
+      id <- paste0("Step", i)
+      lbl <- paste0(steps_df$label[i], "\n(n = ", steps_df$n[i], ")")
+      fill <- if (i == 1 || i == nrow(steps_df)) "lightblue" else "lightgray"
+      nodes <- paste0(
+         nodes,
+         id, ' [label = "', lbl, '", shape = box, style = filled, fillcolor = ', fill, '];\n'
+      )
+      if (i > 1) {
+         edges <- paste0(edges, "Step", i - 1, " -> Step", i, ";\n")
+      }
+   }
+   
+   # Final split into treatment groups
+   if (!is.null(final_split)) {
+      i <- nrow(steps_df)
+      for (j in seq_along(final_split)) {
+         id <- paste0("Group", j)
+         lbl <- paste0(names(final_split)[j], "\n(n = ", final_split[j], ")")
+         nodes <- paste0(
+            nodes,
+            id, ' [label = "', lbl, '", shape = ellipse, style = filled, fillcolor = pink];\n'
+         )
+         edges <- paste0(edges, "Step", i, " -> ", id, ";\n")
+      }
+   }
+   
+   # Wrap in grViz syntax
+   dot <- paste0(
+      "digraph flowchart {\n",
+      #paste0("  graph [layout = dot, rankdir = TB, label = ", title, ", labelloc = t, fontsize = 24];\n"),
+      paste0("  graph [layout = dot, rankdir = TB];\n"),
+      "  node [fontname = Helvetica];\n",
+      nodes,
+      edges,
+      "}"
+   )
+   
+   # grViz(dot)
+   htmltools::div(
+      grViz(dot, width=600, height=900),
+      # style = "margin-top: 40px; margin-bottom: 60px;"
+   )
+}
+
+load(file='~/Desktop/EHR-mining/BuildCohortDatasets/OtherScriptsAndData/filterCounts.Rdata')
+i <- 1L
+```
+<br />
+
+#### Figure 1. *E. coli* - CRO vs. TZP.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 2. *K. pneumoniae* - CRO vs. TZP.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 3. *P. mirabilis* - CRO vs. TZP.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 4. *P. aeruginosa* - FEP vs. TZP.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 5. *S. aureus* - OXA vs. CFZ.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 6. *S. aureus* (MRSA) - VAN vs. switch to DAP.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 7. *E. faecalis* - VAN vs. switch to AMP.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+#### Figure 8. *E. faecium* (VRE) - DAP vs. LZD.
+```{r, echo=FALSE}
+build_flowchart(steps_df = filterCounts[[i]]$df, 
+                final_split = filterCounts[[i]]$trt,
+                title = names(filterCounts)[i]); i <- i + 1L
+```
+<br />
+<br />
+
+
+
+
+
+### Table 6. List of covariates available for each cohort.
+```{r, echo=FALSE, out.width='500pt', fig.align='left'}
+load(file = '~/Desktop/EHR-mining/BuildCohortDatasets/OtherScriptsAndData/covariates_cohort_matrix.Rdata')
+kable(var_mat, "html", escape = TRUE) %>%
+   kable_styling(full_width = FALSE, position='left')# %>%
+#column_spec(extra_css = "word-wrap: break-word;")
+```
+<br />
+<br />
+
+
+
+### Tables 7-14. Covariate balance across treatment groups.
+<br />
+
+#### Table 7. *E. coli* - CRO vs. TZP.
+```{r, echo=FALSE}
+load(file = '~/Desktop/EHR-mining/BuildCohortDatasets/OtherScriptsAndData/table1s.Rdata')
+idx <- 1L
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 8. *K. pneumoniae* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 9. *P. mirabilis* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 10. *P. aeruginosa* - FEP vs. TZP.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 11. *S. aureus* - OXA vs. CFZ.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 12. *S. aureus* (MRSA) - VAN vs. switch to DAP.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 13. *E. faecalis* - VAN vs. switch to AMP.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 14. *E. faecium* (VRE) - DAP vs. LZD.
+```{r, echo=FALSE}
+kable(table1s[[idx]], "html", escape = TRUE) %>% kable_styling(position='left') %>% scroll_box(width='150%'); idx <- idx + 1L
+```
+<br />
+<br />
+
+
+
+### Tables 15-22. ATE estimation data.
+<br />
+```{r, echo=FALSE}
+load(file='~/Desktop/EHR-mining/BuildCohortDatasets/CohortInfo/treatment/ATE_estimates_list.Rdata')
+ATEs <- ATE_info$ATE
+idx <- 1L
+```
+
+
+#### Table 15. *E. coli* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 16. *K. pneumoniae* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 17. *P. mirabilis* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 18. *P. aeruginosa* - FEP vs. TZP.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 19. *S. aureus* - OXA vs. CFZ.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 20. *S. aureus* (MRSA) - VAN vs. switch to DAP.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 21. *E. faecalis* - VAN vs. switch to AMP.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 22. *E. faecium* (VRE) - DAP vs. LZD.
+```{r, echo=FALSE}
+kable(ATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+
+
+
+
+
+### Tables 23-30. CATE estimation data.
+<br />
+```{r, echo=FALSE}
+load(file = '~/Desktop/EHR-mining/BuildCohortDatasets/CohortInfo/treatment/CATE_estimates_list.Rdata')
+CATEs <- sapply(CATE_list, '[', 'ATEs')
+for (i in seq_along(CATEs)) {
+   CATEs[[i]] <- cbind('leaf' = seq_len(nrow(CATEs[[i]])), CATEs[[i]])
+   rownames(CATEs[[i]]) <- NULL
+}
+idx <- 1L
+```
+
+
+#### Table 23. *E. coli* - CRO vs. TZP.
+```{r, echo=FALSE, out.width='400pt', out.height='750pt', fig.align='center', include=TRUE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 24. *K. pneumoniae* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 25. *P. mirabilis* - CRO vs. TZP.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 26. *P. aeruginosa* - FEP vs. TZP.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 27. *S. aureus* - OXA vs. CFZ.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 28. *S. aureus* (MRSA) - VAN vs. switch to DAP.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 29. *E. faecalis* - VAN vs. switch to AMP.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+<br />
+<br />
+
+#### Table 30 *E. faecium* (VRE) - DAP vs. LZD.
+```{r, echo=FALSE}
+kable(CATEs[[idx]], "html", escape=TRUE, digits=3) %>% kable_styling(position='left'); idx <- idx + 1L
+```
+
+
+
+
+

@@ -1,0 +1,33 @@
+Filtered to requested pathogens: 7402 
+Removed isolates resistant to treatments: 7400 
+Removed long AST delay cultures: 7199 
+ASTs and infection data.
+Removed units with concomitant infections that contraindicate either treatment: 7199 
+Demographics data.
+1 2 3 4 5 6 7 
+Removed patients that died within 4 days: 6861
+Removed patients younger than 18 years of age: 6520 
+Encounters data.
+1 2 3 4 5 6 7 
+Removed units without any encounters data: 6040 
+Removed units discharged before end of treatment period: 5895 
+ICU stay data.
+1 2 
+Antibiotic administration.
+1 2 3 4 5 6 
+Vasopressor administration.
+1 2 3 4 5 6 
+Medication administration IV.
+1 2 3 4 5 6 
+Removed units with no abx record: 5748 
+Removed patients that did not receive either trt [0-4]: 4187 
+Removed patients that did not match trt definition: 3878 
+1 2 3 4 
+1 - 2016 2017 2018 2019 2020 2021 2022 2023 2024 
+2 - 2016 2017 2018 2019 2020 2021 2022 2023 2024 
+3 - 2016 2017 2018 2019 2020 2021 2022 2023 2024 
+4 - 2016 2017 2018 2019 2020 2021 2022 2023 2024 
+Removed rows with >50% missingness in laboratory components: 3721 
+OXA/NFC: 1322
+CFZ: 2399
+52.85167

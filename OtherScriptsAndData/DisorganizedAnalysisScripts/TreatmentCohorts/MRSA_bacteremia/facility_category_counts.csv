@@ -1,0 +1,17 @@
+CATEGORY,FACILITY,n,VAN,iDAP,sDAP,DAP
+academic,Magee-W,61,49,4,8,12
+academic,Mercy,289,236,8,45,53
+academic,Presbyterian,410,321,27,62,89
+academic,Shadyside,245,194,16,35,51
+community,East,122,115,4,3,7
+community,McKeesport,63,57,2,4,6
+community,Passavant,164,94,18,52,70
+community,St. Margaret,111,27,48,36,84
+regional,Altoona,274,263,4,7,11
+regional,Hamot,243,225,2,16,18
+regional,Jameson,100,85,4,11,15
+regional,Williamsport,117,95,6,16,22
+rural,Bedford,16,15,1,0,1
+rural,Chatauqua,45,43,1,1,2
+rural,Horizon,34,27,3,4,7
+rural,Northwest,39,36,0,3,3

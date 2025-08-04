@@ -1,0 +1,4 @@
+EmpiricTherapy	n
+FLQ	2833
+both	2816
+other	59759

@@ -1,0 +1,5 @@
+DefinitiveTherapy	n
+CT	486
+CZA	206
+both	24
+neither	2125

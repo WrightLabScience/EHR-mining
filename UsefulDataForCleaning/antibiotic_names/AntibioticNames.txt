@@ -1,0 +1,216 @@
+Generic	Brand
+Amikacin	Amikin
+Amoxicillin	Amoxil, Trimox
+Amoxicillin/Clavulanate	Augmentin
+Ampicillin	Omnipen, Polycillin
+Ampicillin/Sulbactam	Unasyn
+Azithromycin	Zithromax
+Aztreonam	Azactam
+Cefaclor	Ceclor
+Cefazolin	Ancef, Kefzol
+Cefepime	Maxipime
+Cefotetan	Cefotan
+Cefotaxime	Claforan
+Cefoxitin	Mefoxin
+Ceftriaxone	Rocephin
+Cefuroxime	Kefurox, Zinacef
+Chloramphenicol	Chloromycetin
+Clarithromycin	Biaxin
+Clindamycin	Cleocin
+Cloxacillin	Tegopen
+Daptomycin	Cubicin
+Dicloxacillin	Dynapen
+Doxycyclin	Vibramycin
+Ertapenem	Invanz
+Erythromycin	E-Mycin, Erythrocin, Ilosone
+Fosfomycin	Monurol
+Gentamicin	Garamycin
+Imipenem	 
+Imipenem/Cilastatin	Primaxin
+Imipenem/Relebactam	Recarbrio
+Levofloxacin	Levaquin
+Linezolid	Zyvox
+Meropenem	Merrem
+Metronidazole	Flagyl
+Moxifloxacin	Avelox
+Nafcillin	Nafcil, Unipen
+Nitrofurantoin	Furadantin, Macrobid
+Penicillin	Penicillin V, VCillin K, Veetids
+Piperacillin	Pipracil
+Piperacillin/Tazobactam	Zosyn
+Quinupristin/Dalfopristin	Synercid
+Ticarcillin	Ticar
+Ticarcillin/Clavulanate	Timentin
+Tigecycline	Tygacil
+Tobramycin	Nebcin
+Trimethoprim/Sulfamethoxazole	Bactrim, Septra
+Trimethoprim	 
+Vancomycin	Vancocin, Firvanq, Vanco
+Amoxicillin	Amoxil, Polymox, Trimox, Wymox
+Ampicillin	Omnipen, Polycillin, Polycillin-N, Principen, Totacillin
+Bacampicillin	Spectrobid
+Carbenicillin	Geocillin, Geopen
+Cloxacillin	Cloxapen
+Dicloxacillin	Dynapen, Dycill, Pathocil
+Flucloxacillin	Flopen, Floxapen, Staphcillin
+Mezlocillin	Mezlin
+Nafcillin	Nafcil, Nallpen, Unipen
+Oxacillin	Bactocill, Prostaphlin
+Penicillin G	Penicillin G, Bicillin L-A, Crysticillin 300 A.S., Pentids, Permapen, Pfizerpen, Pfizerpen-AS, Wycillin
+Penicillin V	Beepen-VK, Betapen-VK, Ledercillin VK, V-Cillin K
+Piperacillin	Pipracil
+Pivampicillin	 
+Pivmecillinam	 
+Ticarcillin	Ticar
+Cefacetrile	Cephacetrile, Celospor, Celtol, Cristacef
+Cefadroxil	Cefadroxyl, Duricef, Ultracef
+Cephalexin	 
+Cefalexin	Cephalexin, Keflex, Keftab
+Cefaloglycin	Cephaloglycin, Kefglycin
+Cefalonium	Cephalonium
+Cefaloridine	Cephaloradine
+Cefalothin	 
+Cephalothin	Cefalotin, Keflin
+Cefapirin	Cephapirin, Cefadyl
+Cefatrizine	 
+Cefazaflur	 
+Cefazedone	 
+Cefazolin	Cephazolin, Ancef, Kefzol
+Cefradine	Cephradine, Velosef
+Cefroxadine	 
+Ceftezole	 
+Cefaclor	Ceclor, Ceclor CD, Distaclor, Keflor, Ranicor
+Cefamandole	Mandol
+Cefmetazole	 
+Cefonicid	Monocid
+Cefotetan	Cefotan
+Cefoxitin	Mefoxin
+Cefprozil	Cefproxil, Cefzil
+Cefuroxime	Ceftin, Kefurox, Zinacef, Zinnat
+Cefuzonam	 
+Cefcapene	 
+Cefdaloxime	 
+Cefdinir	Omnicef, Cefdiel
+Cefditoren	Spectracef
+Cefetamet	 
+Cefixime	Suprax
+Cefmenoxime	Cefmax
+Cefodizime	 
+Cefotaxime	Claforan
+Cefpimizole	 
+Cefpodoxime	Vantin
+Cefteram	 
+Ceftibuten	Cedax
+Ceftiofur	Excede
+Ceftiolene	 
+Ceftizoxime	Cefizox
+Ceftriaxone	Rocephin
+Cefoperazone	Cefobid
+Ceftazidime	Ceptaz, Fortum, Fortaz, Tazicef, Tazidime
+Cefclidine	 
+Cefepime	Maxipime
+Cefluprenam	 
+Cefoselis	 
+Cefozopran	 
+Cefpirome	Cefrom
+Cefquinome	 
+Ceftobiprole	Zeftera
+Ceftaroline	Teflaro
+Cefaclomezine	 
+Cefaloram	 
+Cefaparole	 
+Cefcanel	 
+Cefedrolor	 
+Cefempidone	 
+Cefetrizole	 
+Cefivitril	 
+Cefmatilen	 
+Cefmepidium	 
+Cefovecin	 
+Cefoxazole	 
+Cefrotil	 
+Cefsumide	 
+Cefuracetime	 
+Ceftioxide	 
+Ceftazidime/Avibactam	Avycaz
+Ceftolozane/Tazobactam	Zerbaxa
+Aztreonam	Azactam, Cayston
+Doripenem	Doribax
+Ertapenem	Invanz
+Meropenem	Merrem
+Meropenem/vaborbactam	Vabomere
+Azithromycin	Zithromax
+Clarithromycin	Biaxin
+Dirithromycin	Dynabac
+Roxithromycin	Rulid, Surlid
+Telithromycin	Ketek
+Clindamycin	Cleocin
+Lincomycin	Lincocin
+Pristinamycin	Pyostacine
+Quinupristin/dalfopristin	Synercid
+Amikacin	Amikin
+Gentamicin	Garamycin, G-Mycin, Jenamicin
+Kanamycin	Kantrex
+Neomycin	Mycifradin, Myciguent
+Netilmicin	Netromycin
+Paromomycin	 
+Streptomycin	 
+Tobramycin	Nebcin
+Flumequine	Flubactin
+Nalidixic acid	NegGam, Wintomylon
+Oxolinic acid	Uroxin
+Piromidic acid	Panacid
+Pipemidic acid	Dolcol
+Rosoxacin	Eradacil
+Ciprofloxacin	Cipro, Cipro XR, Ciprobay, Ciproxin
+Enoxacin	Enroxil, Penetrex
+Lomefloxacin	Maxaquin
+Nadifloxacin	Acuatim, Nadoxin, Nadixa
+Norfloxacin	Lexinor, Noroxin, Quinabic, Janacin
+Ofloxacin	Floxin, Oxaldin, Tarivid
+Pefloxacin	Peflacine
+Rufloxacin	Uroflox
+Balofloxacin	Baloxin
+Gatifloxacin	Tequin, Zymar
+Grepafloxacin	Raxar
+Levofloxacin	Cravit, Levaquin
+Moxifloxacin	Avelox, Vigamox
+Pazufloxacin	Pasil, Pazucross
+Sparfloxacin	Zagam
+Temafloxacin	Omniflox
+Tosufloxacin	Ozex, Tosacin
+Besifloxacin	Besivance
+Delafloxacin	Baxdela
+Clinafloxacin	 
+Gemifloxacin	Factive
+Prulifloxacin	Quisnon
+Sitafloxacin	Gracevit
+Trovafloxacin	Trovan
+Sulfamethizole	Thiosulfil Forte
+Sulfamethoxazole	Gantanol, Urobak
+Sulfisoxazole	Gantrisin
+Trimethoprim/Sulfamethoxazole	Bactrim, Bactrim DS, Cotrim, Cotrim DS, Septra, Septra DS, Sulfatrim, Sulfatrim-DS
+Demeclocycline	Declomycin
+Doxycycline	Doryx, Vibramycin
+Minocycline	Dynacin, Minocin, Monodox
+Oxytetracycline	Terramycin
+Tetracycline	Achromycin
+Tigecycline	Tygacil
+Chloramphenicol	Chloromycetin
+Metronidazole	Flagyl, Helidac, Metizol, Metric 21, Neo-Metric, Noritate, Novonidazol
+Tinidazole	Tindamax
+Nitrofurantoin	Furadantin, Macrobid, Macrodantin
+Teicoplanin	Targocid
+Telavancin	Vibativ
+Linezolid	Zyvox
+Cycloserine	Seromycin
+Rifampin	Rifadin
+Rifampicin	 
+Rifabutin	Mycobutin
+Rifapentine	Priftin
+Rifalazil	 
+Bacitracin	Baciguent
+Polymyxin B	Poly-Rx
+Viomycin	 
+Capreomycin	 
+Polymixin E	Colistin

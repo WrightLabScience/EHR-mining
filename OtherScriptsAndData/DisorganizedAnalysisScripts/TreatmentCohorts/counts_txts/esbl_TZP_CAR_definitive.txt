@@ -1,0 +1,6 @@
+DefinitiveTherapy	n
+Carbapenem	6924
+Pip-tazo	1732
+both	1293
+noAbx	5133
+otherAbx	5579
