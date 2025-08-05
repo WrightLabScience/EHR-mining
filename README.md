@@ -26,13 +26,25 @@ Within this directory, `PrimaryScripts/` contains several scripts that:
    * "CBPS" - Covariate balancing propensity score estimation for ATE, ATT, and ATC. See Imai, Kosuke and Marc Ratkovic. 2014. “Covariate Balancing Propensity Score.” Journal of the Royal Statistical Society, Series B (Statistical Methodology). http://imai.princeton.edu/research/CBPS.html.
    * Propensity score-based weights (prop scores calculated by GBM in twang package). See Hirano & Imbens (2001): Estimation of causal effects using propensity score weighting., Imbens & Rubin (2015): Causal Inference for Statistics, Social, and Biomedical Sciences. Cambridge University Press.
       * "ATE" - Standard inverse probability of treatment weighting (IPTW). Estimates the average effect of treatment across the full population by reweighting each group to represent the whole population.
-      * "ATTw" = Weights control units to resemble the treated group. Treated units get weight 1, controls are weighted by odds of treatment. Focuses on treatment effect among units that actually received treatment.
-      * "ATCw" = Weights treated units to resemble the control group. Controls get weight 1, treated are weighted by inverse odds of treatment. Focuses on effect of treatment on the untreated population.
-      * "ATO" = Downweights units with extreme propensity scores. Targets the **overlap** population — individuals who could plausibly receive either treatment. Improves stability and reduces extrapolation. See Li, Morgan, & Zaslavsky (2018): Targeted weighting for overlap population. JASA.
-      * "ATS" = Balances groups to match marginal treatment assignment probabilities. Used to construct synthetic populations with controlled treatment group proportions. Li & Greene (2013): Efficient estimation for average treatment effects using the propensity score. Journal of Econometrics.
+      * "ATTw" - Weights control units to resemble the treated group. Treated units get weight 1, controls are weighted by odds of treatment. Focuses on treatment effect among units that actually received treatment.
+      * "ATCw" - Weights treated units to resemble the control group. Controls get weight 1, treated are weighted by inverse odds of treatment. Focuses on effect of treatment on the untreated population.
+      * "ATO" - Downweights units with extreme propensity scores. Targets the **overlap** population — individuals who could plausibly receive either treatment. Improves stability and reduces extrapolation. See Li, Morgan, & Zaslavsky (2018): Targeted weighting for overlap population. JASA.
+      * "ATS" - Balances groups to match marginal treatment assignment probabilities. Used to construct synthetic populations with controlled treatment group proportions. Li & Greene (2013): Efficient estimation for average treatment effects using the propensity score. Journal of Econometrics.
    * *Note that for some methods, no solution is found to the weight optimization problem.*
 
-* Treatment variable note: since we are comparing two antibiotic treatments, we have to arbitrarily assign one antibiotic as "treatment" and the other as "control" since that is how all of these methods view the problem. For each cohort, "treatment" was chosen as the less common antibiotic (e.g., daptomycin for MRSA and *E. faecalis*).
+* Treatments: 
+   * Binary: since we are comparing two antibiotic treatments, we have to arbitrarily assign one antibiotic as "treatment" and the other as "control" since that is how all of these methods view the problem. For each cohort, "treatment" was chosen as the less common antibiotic (e.g., daptomycin for MRSA and *E. faecalis*).
+   * Antibiotics:
+      * OXA - Oxacillin
+      * NFC - Nafcillin
+      * CFZ - Cefazolin
+      * VAN - Vancomycin
+      * DAP - Daptomycin (some cohorts measured a "switch" from vancomycin to Daptomycin before end of the day 3 after blood culture, while other cohorts considered Daptomycin use alone)
+      * CRO - Ceftriaxone
+      * TZP - Piperacillin-tazobactam
+      * FEP - Cefepime
+      * LZD - Linezolid
+      * AMP - Ampicillin (some cohorts measured a "switch" from vancomycin to Ampicillin before end of the day 3 after blood culture, while other cohorts considered Ampicillin use alone)
 
 * Outcomes:
    * Binary 30-day mortality

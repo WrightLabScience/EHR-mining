@@ -27,8 +27,8 @@ for (cohort in seq_along(ATE_estimates)) {
    
    tryCatch(
       {
-         pdf(file = paste0('Plots/003_ATEestimates/', bug_name, '.pdf'), height=7.5, width=5)
-         par(mfrow=c(3,1), tck=-0.015, mgp=c(2, 0.25, 0), mar=c(7.25, 3.5, 1.25, 3))
+         pdf(file = paste0('Plots/003_ATEestimates/', bug_name, '.pdf'), height=7.5, width=5.5)
+         par(mfrow=c(3,1), tck=-0.015, mgp=c(2, 0.25, 0), mar=c(7.25, 3.5, 1.25, 4.25))
          
          # Loop over outcomes and plot
          for (o in seq_along(ATE_estimates[[cohort]])) {
