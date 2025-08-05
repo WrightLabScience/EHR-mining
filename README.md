@@ -10,7 +10,12 @@ Within this directory, `PrimaryScripts/` contains several scripts that:
 
 002b - Assess the balancing effect of the balancing weights (balance diagnostics)
 
+* test bullet 1
+* test bullet 2
+
 003a - Estimate average treatment effects using the raw data and balancing weights (003b - plot those treatment effects).
+* test bullet 1
+* test bullet 2
 
 004 - [Still a work in progress] - Use causal forests to identify subgroups within each cohort that have significantly different treatment effects. Previous attempts at using causal decision trees yielded interesting, but unstable results. Causal forests provide more stability and might be a useful tool for identifying clinically-meaningful subpopulations in a data-driven way.
 
