@@ -217,8 +217,42 @@ for (cohort in seq_along(cohort_info)) {
 }
 
 # Save it.
-save(cohort_info, file = '~/Desktop/EHR-mining/BuildCohortDatasets/CohortInfo/treatment/cohort_info.Rdata')
+save(cohort_info, file = '~/Desktop/EHR-mining/BacteremiaTreatmentEffects/CohortInfo/treatment/cohort_info.Rdata')
 
+
+
+cohort_info <- list(
+   list(bug = 'E_coli',       abx = 'TRIMETHOPRIM/SULFAMETHOXAZOLE'),
+   list(bug = 'E_coli',       abx = 'AMPICILLIN'), 
+   list(bug = 'E_coli',       abx = 'AMPICILLIN/SULBACTAM'), 
+   list(bug = 'E_coli',       abx = 'CIPROFLOXACIN'),
+   list(bug = 'E_coli',       abx = 'CEFAZOLIN'),
+   list(bug = 'K_pneumoniae', abx = 'TRIMETHOPRIM/SULFAMETHOXAZOLE'),
+   list(bug = 'P_aeruginosa', abx = 'CIPROFLOXACIN'), 
+   list(bug = 'P_aeruginosa', abx = 'AZTREONAM'), 
+   list(bug = 'P_mirabilis',  abx = 'CIPROFLOXACIN'),
+   list(bug = 'P_mirabilis',  abx = 'TRIMETHOPRIM/SULFAMETHOXAZOLE'),
+   list(bug = 'S_aureus',     abx = 'OXACILLIN'),
+   list(bug = 'S_aureus',     abx = 'CLINDAMYCIN'), 
+   list(bug = 'E_faecalis',   abx = 'RIFAMPIN'), 
+   list(bug = 'E_faecium',    abx = 'VANCOMYCIN')
+   #list(bug = 'E_faecium',    abx = 'AMPICILLIN')
+)
+
+source('~/Desktop/EHR-mining/UsefulDataForCleaning/antibiotic_names/CreateNamedAbxAbbreviations.R')
+
+# Add some extra info about each.
+for (cohort in seq_along(cohort_info)) {
+   cohort_bug <- cohort_info[[cohort]]$bug
+   cohort_abx <- cohort_info[[cohort]]$abx
+   cohort_name <- paste0(cohort_bug, '_', abbr[cohort_abx], '_resistance')
+   cohort_info[[cohort]]$cohort_name <- cohort_name
+   
+   clean_bug_name <- gsub('([A-Z])_([a-z]+)(_[A-Z]+)?', '\\1. \\2', cohort_bug)
+   cohort_info[[cohort]]$clean_bug_name <- clean_bug_name
+}
+
+save(cohort_info, file = '~/Desktop/EHR-mining/BacteremiaTreatmentEffects/CohortInfo/resistance/cohort_info.Rdata')
 
 
 
